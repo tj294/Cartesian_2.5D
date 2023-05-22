@@ -1,0 +1,423 @@
+"""
+A Dedalus v3 script for running 2.5D numerical simulations of in a Cartesian box. This script
+allows for an internal heating function, such as in Currie et al. 2020.
+To Do:
+
+Usage:
+    d3_rb_convect.py [options]
+    d3_rb_convect.py [--currie | --kazemi] [options]
+
+Options:
+    -t --test                       # Do not save any output
+    -m=<mesh>, --mesh=<mesh>        # Processor Mesh
+    --currie                        # Run with Currie 2020 heating function
+    --kazemi                        # Run with Kazemi 2022 heating function
+    -o OUT_PATH, --output OUT_PATH  # output file [default= ../DATA/output/]
+    -i IN_PATH, --input IN_PATH     # path to read in initial conditions from
+    -k, --kill                      # Kills the program after building the solver.
+    -f, --function                  # Plots the heating function
+"""
+import numpy as np
+import dedalus.public as d3
+import logging
+import os
+import pathlib
+from glob import glob
+from docopt import docopt
+import json
+from mpi4py import MPI
+ncpu = MPI.COMM_WORLD.size
+
+import rb_params as rp
+
+logger = logging.getLogger(__name__)
+
+class NaNFlowError(Exception):
+    pass
+
+args = docopt(__doc__, version='0.2')
+
+mesh = args['--mesh']
+if mesh is not None:
+	mesh = mesh.split(',')
+	mesh = [int(mesh[0]), int(mesh[1])]
+logger.info("ncpu = {}".format(ncpu))
+log2 = np.log2(ncpu)
+if log2 == int(log2):
+	mesh = [int(2**np.ceil(log2/2)), int(2**np.floor(log2/2))]
+logger.info("running on processor mesh={}".format(mesh))
+
+if not (args['--test']):
+    outpath = os.path.normpath(args['--output']) + "/"
+    os.makedirs(outpath, exist_ok=True)
+
+if args['--input']:
+    restart_path = os.path.normpath(args['--input']) + "/"
+
+Ly, Lz = rp.Ly, rp.Lz
+Ny, Nz = rp.Ny, rp.Nz
+
+Ra, Pr = rp.Ra, rp.Pr
+snapshot_iter = rp.snapshot_iter
+analysis_iter = rp.analysis_iter
+
+if args['--kazemi']:
+    heat_type = 'Kazemi'
+elif args['--currie']:
+    heat_type = 'Currie'
+else:
+    heat_type = None 
+logger.info(f"Ra={Ra:1.1e}, Pr={Pr:1.1e},\nLy={Ly}, Lz={Lz}, Ny={Ny}, Nz={Nz}, Heated={heat_type}")
+
+# parallel = "gather"
+parallel = None
+
+# ====================
+# SET UP PROBLEM
+# ====================
+dealias = rp.dealias
+dtype = np.float64
+timestepper = rp.timestepper
+
+stop_sim_time = rp.stop_sim_time
+stop_wall_time = rp.stop_wall_time
+stop_iteration = rp.end_iteration
+
+max_timestep = rp.max_timestep
+
+# ===Initialise basis===
+coords = d3.CartesianCoordinates("x", "y", "z")
+dist = d3.Distributor(coords, dtype=dtype)
+xbasis = d3.RealFourier(coords["x"], size=2, bounds=(0, Ly), dealias=dealias)
+ybasis = d3.RealFourier(coords["y"], size=Ny, bounds=(0, Ly), dealias=dealias)
+zbasis = d3.ChebyshevT(coords["z"], size=Nz, bounds=(0, Lz), dealias=dealias)
+x, y, z = dist.local_grids(xbasis, ybasis, zbasis)
+all_bases = (xbasis, ybasis, zbasis)
+hor_bases = (xbasis, ybasis)
+
+# Add fields (e.g. variables of the equations)
+# Velocity
+u = dist.VectorField(coords, name="u", bases=all_bases)
+# Pressure
+p = dist.Field(name="p", bases=all_bases)
+# Temperature
+Temp = dist.Field(name="Temp", bases=all_bases)
+
+# Add Tau Terms
+# Velocity tau terms, tau_u1 = (tau_1, tau_2)
+tau_u1 = dist.VectorField(coords, name="tau_u1", bases=hor_bases)
+tau_u2 = dist.VectorField(coords, name="tau_u2", bases=hor_bases)
+# Temperature Tau Terms
+tau_T3 = dist.Field(name="tau_T3", bases=hor_bases)
+tau_T4 = dist.Field(name="tau_T4", bases=hor_bases)
+# Scalar tau term for pressure gauge fixing
+tau_p = dist.Field(name="tau_p")
+
+# Substitutions
+x_hat, y_hat, z_hat = coords.unit_vector_fields(dist)
+lift_basis = zbasis.derivative_basis(1)  # Chebyshev U Basis
+lift = lambda A: d3.Lift(A, lift_basis, -1)  # Shortcut for multiplying by U_{N-1}(y)
+uz = d3.Differentiate(u, coords["z"])
+Tz = d3.Differentiate(Temp, coords["z"])
+
+u_x = u @ x_hat
+u_y = u @ y_hat
+u_z = u @ z_hat
+dzu_y = d3.Differentiate(u_y, coords["z"])
+dzu_x = d3.Differentiate(u_x, coords["z"])
+
+
+f_cond = -d3.Differentiate( d3.Integrate(Temp, coords['y']) / Ly, coords['z'])
+f_conv = d3.Integrate(u_z * Temp, coords['y']) / Ly
+g_operator = d3.grad(u) - z_hat * lift(tau_u1)
+h_operator = d3.grad(Temp) - z_hat * lift(tau_T3)
+F = rp.F
+
+# Add coriolis term
+Tah = np.sqrt(rp.Ta)
+theta = rp.theta
+# rotation vector
+omega = dist.VectorField(coords, name='omega', bases=all_bases)
+omega['g'][0] = 0
+omega['g'][1] = np.sin(theta)
+omega['g'][2] = np.cos(theta)
+
+# #? =================
+# #! HEATING FUNCTION
+# #? =================
+# Following Currie et al. 2020 Set-up B
+# Width of middle 'convection zone' with no heating/cooling
+H = rp.convection_height
+# Width of heating and cooling layers
+Delta = rp.heating_width * H
+
+heat = dist.Field(bases=zbasis)
+if args['--currie']:
+    heat_func = lambda z: (F / Delta) * (
+        1 + np.cos((2 * np.pi * (z - (Delta / 2))) / Delta)
+    )
+    cool_func = lambda z: (F / Delta) * (
+        -1 - np.cos((2 * np.pi * (z - Lz + (Delta / 2))) / Delta)
+    )
+
+    heat ['g'] = np.piecewise(z, [z <= Delta, z >= Lz - Delta], [heat_func, cool_func, 0])
+elif args['--kazemi']:
+    l = 0.1
+    beta = 1
+    a = 1 / (0.1 * (1 - np.exp(-1/l)))
+    heat_func = lambda z: a * np.exp(-z/l) - beta
+    heat['g'] = heat_func(z)
+else:
+    #! === No Heating ===
+    heat['g'] = np.zeros(heat['g'].shape)
+
+if args['--function']:
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots(figsize=(5, 5))
+    ax.scatter(heat['g'], z, c='k', s=5)
+    if args['--currie']:
+        ax.axhspan(0, Delta, color='r', alpha=0.2)
+        ax.text(np.min(heat['g']), 0.05, 'Heating Zone', color='r')
+        ax.axhspan(0.5-(H/2), 0.5+(H/2), color='k', alpha=0.2)
+        ax.text(np.min(heat['g']), 0.5, 'Convection Zone', color='k')
+        ax.axhspan(Lz-Delta, 1, color='blue', alpha=0.2)
+        ax.text(0.4*np.max(heat['g']), 0.95, 'Cooling Zone', color='blue')
+        ax.set_xlabel('Heat')
+        ax.set_ylabel('z')
+        ax.set_title('Currie Heat Function')
+    if args['--kazemi']:
+        line = -l * np.log(beta / a)
+        ax.axhspan(0, line, color='r', alpha=0.2)
+        ax.axhspan(line, 1, color='blue', alpha=0.2)
+        ax.text(8, 0.1, 'Heating Zone', ha='center', color='r')
+        ax.text(8, 0.6, 'Cooling Zone', ha='center', color='blue')
+        ax.set_xlabel('Heat')
+        ax.set_ylabel('z')
+        ax.set_title('Kazemi Heat Function')
+    if not args['--test']:
+        fig.savefig(outpath+'heat_func.pdf')
+    else:
+        fig.savefig('heat_func.pdf')
+        exit(0)
+
+# === Initialise Problem ===
+problem = d3.IVP(
+    [u, p, Temp, tau_u1, tau_u2, tau_T3, tau_T4, tau_p], time="t", namespace=locals()
+)
+problem.add_equation("trace(g_operator) + tau_p= 0")  # needs a gauge fixing term
+problem.add_equation(
+    "dt(u) - (div(g_operator)) + grad(p) - (Ra / Pr)*Temp*z_hat + lift(tau_u2) = - u@g_operator - Tah*cross(omega, u)"
+)
+problem.add_equation(
+    "dt(Temp) + lift(tau_T4) - (1/Pr) * (div(h_operator)) = -(u@h_operator) + heat"
+)
+
+#? === Driving Boundary Conditions ===
+#! === Boundary Driven ===
+#* === RB1 (Temp gradient)===
+# # T=0 at top, T=1 at bottom
+# problem.add_equation("Temp(z=0) = 1")
+# problem.add_equation("Temp(z=Lz) = 0")
+
+#* === RB2 (fixed flux) ===
+# # Goluskin 2015
+# problem.add_equation('Tz(z=0) = -F')
+# problem.add_equation('Tz(z=Lz) = -F')
+
+# *=== RB3 ===*
+# # Fixed F at bottom, T=0 at top
+# problem.add_equation('Tz(z=0) = -F')
+# problem.add_equation('Temp(z=Lz) = 0')
+
+#! === Internally Heated ===
+#* === IH1 (T=0) ===
+# # T=0 at top and bottom (Goluskin & van der Poel 2016)
+# problem.add_equation('Temp(z=0) = 0')
+# problem.add_equation('Temp(z=Lz) = 0')
+
+#* === IH2 ===
+# # Insulating bottom, fixed flux top
+# problem.add_equation('Tz(z=0) = 0')
+# problem.add_equation('Tz(z=Lz) = -F')
+if args['--currie'] or args['--kazemi']:
+    #* === IH3 ===
+    # # Kazemi et al. 2022
+    # # Insulating bottom, T=0 top
+    problem.add_equation('Tz(z=0) = 0')
+    problem.add_equation('Temp(z=Lz) = 0')
+else:
+    problem.add_equation('Tz(z=0) = -F')
+    problem.add_equation('Temp(z=Lz) = 0')
+
+#! === Other ===
+#* === Currie et al. 2020 ===
+# # Fixed temp bottom, insulating top:
+# problem.add_equation("Temp(z=0) = 0")
+# problem.add_equation("Tz(z=Lz) = 0")
+
+#? === Velocity Boundary Conditions ===
+#* === Stress-Free ===
+# d(ux)/dz|(z=0, D) = 0
+if args['--kazemi']:
+    #* === No-Slip  ===
+    problem.add_equation("u(z=0) = 0")
+    problem.add_equation("u(z=Lz) = 0")
+else:
+    problem.add_equation("dzu_y(z=0) = 0")
+    problem.add_equation("dzu_y(z=Lz) = 0")
+    problem.add_equation("dzu_x(z=0) = 0")
+    problem.add_equation("dzu_x(z=Lz) = 0")
+    problem.add_equation('u_z(z=0) = 0')
+    problem.add_equation('u_z(z=Lz) = 0')
+
+# Pressure gauge fixing
+problem.add_equation("integ(p) = 0")
+
+
+solver = problem.build_solver(timestepper)
+logger.info("Solver built")
+
+# ====================
+# INITIAL CONDITIONS
+# ====================
+if args['--input']:
+    if pathlib.Path(restart_path + "snapshots/").exists():
+        restart_file = sorted(glob(restart_path + "snapshots/*.h5"))[-1]
+        write, last_dt = solver.load_state(restart_file, -1)
+        dt = last_dt
+        first_iter = solver.iteration
+        fh_mode = "append"
+    else:
+        print("{} does not exist.".format(restart_path + "snapshots_s1.h5"))
+        exit(-10)
+else:
+    # amp = 1e-3
+    # noise = dist.Field(name='noise', bases=zbasis)
+    # noise.fill_random("g", seed=42, distribution="standard_normal")
+    # noise.low_pass_filter(scales=0.25)
+    # noise.high_pass_filter(scales=0.125)
+    # Temp["g"] += amp * noise['g'] * (1 - z**2)
+    # Temp['g'] += Lz - z
+
+
+    Temp.fill_random("g", seed=42, distribution="normal", scale=1e-5)
+    # Temp.low_pass_filter(scales=0.25)
+    # Temp.high_pass_filter(scales=0.125)
+    Temp["g"] *= z * (Lz - z)
+    Temp["g"] += Lz - z
+
+    first_iter = 0
+    dt = rp.dt
+    fh_mode = "overwrite"
+
+if not args['--test']:
+    snapshots = solver.evaluator.add_file_handler(
+        outpath + "snapshots",
+        iter=snapshot_iter,
+        max_writes=5000,
+        mode=fh_mode,
+        parallel=parallel,
+    )
+    snapshots.add_tasks(solver.state, layout="g")
+    
+    # quick_snap = solver.evaluator.add_file_handler(
+    #     outpath+"quicks",
+    #     iter=100,
+    #     max_writes=50,
+    #     mode='overwrite',
+    #     parallel=parallel,
+    # )
+    # quick_snap.add_tasks(solver.state, layout='g')
+
+    os.makedirs(outpath + "run_params/", exist_ok=True)
+    run_params = {
+        "Ly": Ly,
+        "Lz": Lz,
+        "Ny": Ny,
+        "Nz": Nz,
+        "Ra": Ra,
+        "Pr": Pr,
+        "F": F,
+        "max_timestep": max_timestep,
+        "snapshot_iter": rp.snapshot_iter,
+        "analysis_iter": rp.analysis_iter,
+    }
+    run_params = json.dumps(run_params, indent=4)
+    
+    with open(outpath + "run_params/runparams.json", "w") as run_file:
+        run_file.write(run_params)
+    # ==================
+    # ADD ANALYSIS TASKS
+    # ==================
+    analysis = solver.evaluator.add_file_handler(
+        outpath + "analysis",
+        iter=analysis_iter,
+        max_writes=5000,
+        mode=fh_mode,
+        parallel=parallel,
+    )
+    analysis.add_task(f_cond, name='F_cond', layout='g') #? F_cond
+    analysis.add_task(f_conv, name='F_conv', layout='g') #? F_conv
+    analysis.add_task(0.5*u@u, name='KE', layout='g') #? KE
+    analysis.add_task(d3.Integrate(Temp, 'y') / Ly, name='<T>y', layout='g') #? <T>y
+    analysis.add_task(d3.Integrate(d3.Integrate(Temp, 'y'), 'z') / (Lz*Ly), name='<T>', layout='g') #? <T>
+    analysis.add_task((d3.Integrate(f_cond, coords['z']) / Lz) / (d3.Integrate(f_conv, coords['z']) / Lz),
+                      name='Nu_inst', layout='g') #? Nu_inst
+
+
+solver.stop_sim_time = stop_sim_time
+solver.stop_wall_time = stop_wall_time
+solver.stop_iteration = first_iter + rp.end_iteration + 1
+solver.warmup_iterations = solver.iteration + 2000
+
+CFL = d3.CFL(
+    solver,
+    initial_dt=dt,
+    cadence=10,
+    safety=0.5,
+    threshold=0.1,
+    max_change=1.5,
+    min_change=0.5,
+    max_dt=max_timestep,
+)
+CFL.add_velocity(u)
+flag = True
+flow = d3.GlobalFlowProperty(solver, cadence=10)
+flow.add_property(np.sqrt(u @ u), name="Re")
+if args['--kill']:
+    exit(-99)
+try:
+    logger.info("Starting main loop")
+    while solver.proceed:
+        timestep = CFL.compute_timestep()
+        solver.step(timestep)
+        if (solver.iteration - 1) % 10 == 0:
+            max_Re = flow.max("Re")
+            logger.info(
+                "Iteration=%i,\n\tTime=%e, dt=%e, max(Re)=%f"
+                % (solver.iteration - first_iter, solver.sim_time, timestep, max_Re)
+            )
+        if np.isnan(max_Re):
+            raise NaNFlowError
+        if (solver.iteration > solver.warmup_iterations) & flag:
+            logger.info(
+                "WARM-UP COMPLETE: Max dt changed to 1e-2"
+            )
+            CFL.max_dt = 1e-2
+            flag = False
+except KeyboardInterrupt:
+    logger.error("User quit loop. Triggering end of main loop")
+    raise
+except NaNFlowError:
+    logger.error("Max Re is NaN. Triggering end of loop")
+except:
+    logger.error("Unknown error raised. Triggering end of loop")
+finally:
+    # if not args.test:
+    #     # logger.info("Merging outputs...")
+    #     # combine_outputs.merge_files(outpath)
+    solver.evaluate_handlers_now(timestep)
+    solver.log_stats()
+    total_iterations = solver.iteration - first_iter
+    total_writes = (total_iterations)// snapshot_iter
+    logger.info("Total writes = {}".format(total_writes))
