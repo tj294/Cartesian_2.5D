@@ -13,7 +13,7 @@ dealias = 3 / 2
 F = 1
 Ra = 1e6
 Pr = 1
-Ta = 0
+Ta = 1e3
 theta = np.pi/5
 
 timestepper = RK443
@@ -25,5 +25,5 @@ stop_sim_time = 1
 stop_wall_time = np.inf
 end_iteration = np.inf
 
-snapshot_iter = 500
-analysis_iter = 500
+snapshot_iter = 250
+analysis_iter = 250
