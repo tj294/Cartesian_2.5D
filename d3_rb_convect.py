@@ -57,7 +57,7 @@ if args['--input']:
 Ly, Lz = rp.Ly, rp.Lz
 Ny, Nz = rp.Ny, rp.Nz
 
-Ra, Pr = rp.Ra, rp.Pr
+Ra, Pr, Ta = rp.Ra, rp.Pr, rp.Ta
 snapshot_iter = rp.snapshot_iter
 analysis_iter = rp.analysis_iter
 
@@ -67,7 +67,7 @@ elif args['--currie']:
     heat_type = 'Currie'
 else:
     heat_type = None 
-logger.info(f"Ra={Ra:1.1e}, Pr={Pr:1.1e},\nLy={Ly}, Lz={Lz}, Ny={Ny}, Nz={Nz}, Heated={heat_type}")
+logger.info(f"Ra={Ra:1.1e}, Pr={Pr:1.1e}, Ta={Ta:1.1e}\nLy={Ly}, Lz={Lz}, Ny={Ny}, Nz={Nz}, Heated={heat_type}")
 
 # parallel = "gather"
 parallel = None
@@ -134,7 +134,7 @@ h_operator = d3.grad(Temp) - z_hat * lift(tau_T3)
 F = rp.F
 
 # Add coriolis term
-Tah = np.sqrt(rp.Ta)
+Tah = np.sqrt(Ta)
 theta = rp.theta
 # rotation vector
 omega = dist.VectorField(coords, name='omega', bases=all_bases)
