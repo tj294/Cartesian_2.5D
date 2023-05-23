@@ -220,7 +220,7 @@ if args['--gif']:
         plt.savefig(fnames[-1])
         ax.cla()
     print("\nCreating GIF...")
-    with imageio.get_writer(f"{direc}/2heatmap.gif", mode="I") as writer:
+    with imageio.get_writer(f"{direc}/heatmap.gif", mode="I") as writer:
         for i, filename in enumerate(fnames):
             print(f"\t frame {i+1}/{len(fnames)}", end='\r')
             image = imageio.imread(filename)
