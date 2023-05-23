@@ -13,8 +13,8 @@ dealias = 3 / 2
 F = 1
 Ra = 1e6
 Pr = 1
-Ta = 1e4
-theta = np.pi/4
+Ta = 0
+theta = np.pi/5
 
 timestepper = RK443
 
