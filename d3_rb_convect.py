@@ -488,5 +488,7 @@ finally:
     solver.evaluate_handlers_now(timestep)
     solver.log_stats()
     total_iterations = solver.iteration - first_iter
-    total_writes = (total_iterations)// snapshot_iter
-    logger.info("Total writes = {}".format(total_writes))
+    snap_writes = (total_iterations) // snapshot_iter
+    horiz_writes = (total_iterations) // horiz_iter
+    scalar_writes = (total_iterations) // scalar_iter
+    logger.info("Snaps = {}, Horiz = {}, Scalars = {}".format(snap_writes, horiz_writes, scalar_writes))
