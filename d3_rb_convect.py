@@ -14,6 +14,7 @@ Options:
     --theta=<theta>                 # co-latitude of box to rotation vector [default: 45]
     --Ny=<Ny>                       # Horizontal resolution
     --Nz=<Nz>                       # Vertical resolution
+    --tau=<tau>                     # timescale [default: viscous]
     --maxdt=<maxdt>                 # Maximum timestep [default: 1e-5]
     --stop=<stop>                   # Simulation stop time
     --snaps=<snaps>                 # Snapshot interval [default: 500]
@@ -244,12 +245,20 @@ problem = d3.IVP(
     [u, p, Temp, tau_u1, tau_u2, tau_T3, tau_T4, tau_p], time="t", namespace=locals()
 )
 problem.add_equation("trace(g_operator) + tau_p= 0")  # needs a gauge fixing term
-problem.add_equation(
-    "dt(u) - (div(g_operator)) + grad(p) - (Ra / Pr)*Temp*z_hat + lift(tau_u2) = - u@g_operator - Tah*cross(omega, u)"
-)
-problem.add_equation(
-    "dt(Temp) + lift(tau_T4) - (1/Pr) * (div(h_operator)) = -(u@h_operator) + heat"
-)
+if args['--tau']=='thermal':
+    problem.add_equation(
+        "dt(u) - (div(g_operator)) + grad(p) - (Ra / Pr)*Temp*z_hat + lift(tau_u2) = - u@g_operator - Tah*cross(omega, u)"
+    )
+    problem.add_equation(
+        "dt(Temp) + lift(tau_T4) - (1/Pr) * (div(h_operator)) = -(u@h_operator) + heat"
+    )
+elif args['--tau']=='viscous':
+    problem.add_equation(
+        "dt(u) - (div(g_operator)) + grad(p) - (Ra * Pr)*Temp*z_hat + lift(tau_u2) = - u@g_operator - Tah*cross(omega, u)"
+    )
+    problem.add_equation(
+        "dt(Temp) + lift(tau_T4) - (div(h_operator)) = -(u@h_operator) + heat"
+    )
 
 #? === Driving Boundary Conditions ===
 #! === Boundary Driven ===
