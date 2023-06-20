@@ -25,6 +25,7 @@ import time as timer
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import json
+import warnings
 import imageio.v2 as imageio
 from os import makedirs
 from os.path import normpath
@@ -47,6 +48,10 @@ args = docopt(__doc__, version='2.0')
 print(args)
 
 direc = normpath(args['FILE']) + '/'
+
+if not glob(direc):
+    raise FileNotFoundError('Directory does not exist')
+
 outpath = direc + 'images/'
 makedirs(outpath, exist_ok=True)
 
@@ -104,6 +109,7 @@ if args['--gif']:
                 snap_time = np.concatenate((snap_time, np.array(file['scales']['sim_time'])), axis=0)
                 temp = np.concatenate((temp, np.array(file['tasks']['Temp'])[:, 0, :, :]), axis=0)
                 vel = np.concatenate((vel, np.array(file['tasks']['u'])[:, 1:3, :, :]), axis=0)
+                
 
 read_finish = timer.time() - start_time
 print(f"Done ({read_finish:.2f} seconds)")
@@ -233,9 +239,15 @@ if args['--gif']:
     fig.subplots_adjust(left=0.1, right=0.85)
     print("Plotting Frames...")
     makedirs(f'{direc}/plots', exist_ok=True)
+    yspace = len(y)//15
+    zspace = len(z)//5
     for i, t in enumerate(snap_time):
         print(f"\t{(i+1) / len(snap_time) * 100:3.0f}% complete", end='\r')
         cax = ax.contourf(yy, zz, temp[i, :, :], levels=levels, cmap='inferno', extend='both')
+        warnings.filterwarnings("ignore")
+        ax.quiver(yy[::yspace, ::zspace], zz[::yspace, ::zspace],
+                vel[i, 0, ::yspace, ::zspace], vel[i, 1, ::yspace, ::zspace],
+                color='w', pivot='mid')    
         ax.set_xlabel('y')
         ax.set_ylabel('z')
         ax.set_title(rf"{t:.2f} $\tau$")
