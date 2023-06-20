@@ -9,7 +9,6 @@ Usage:
     
 Options:
     -t --time-tracks                # Plot the time-track data (KE and 1/<T>)
-    --index [index]                 # Index(es) of quicks to plot [default: -1]
     -d --depth-profile              # Plot the depth profile of the temperature
     -f --flux-balance               # Plot the flux-balance with depth
     -i --info                       # Information required 
@@ -48,6 +47,8 @@ args = docopt(__doc__, version='1.0')
 print(args)
 
 direc = normpath(args['FILE']) + '/'
+outpath = direc + 'images/'
+makedirs(outpath, exist_ok=True)
 
 start_time = timer.time()
 print("====== Data Read-In ======")
@@ -57,56 +58,64 @@ if args['--info'] or args['--time-tracks']:
         if i==0:
             with h5.File(sc_file, 'r') as file:
                 sc_time = np.array(file['scales']['sim_time'])
-                deltaT = np.array(file['tasks']['<T(0)>'].dims[2])
+                deltaT = np.array(file['tasks']['<T(0)>'])[:, 0, 0, 0]
                 if args['--time-tracks']:
-                    KE = np.array(file['tasks']['KE'])
+                    KE = np.array(file['tasks']['KE'])[:, 0, 0, 0]
         else:
             with h5.File(sc_file, 'r') as file:
                 sc_time = np.concatenate((sc_time, np.array(file['scales']['sim_time'])), axis=0)
-                deltaT = np.concatenate((deltaT, np.array(file['tasks']['<T(0)>'])), axis=0)
+                deltaT = np.concatenate((deltaT, np.array(file['tasks']['<T(0)>'])[:, 0, 0, 0]), axis=0)
                 if args['--time-tracks']:
-                    KE = np.concatenate((KE, np.array(file['tasks']['KE'])), axis=0)
-    
-print(sc_time.shape)
-print(deltaT)
-print(KE.shape)
-# for i, a_file in enumerate(sorted(analysis_files)):
-#     if i==0:
-#         with h5.File(a_file, 'r') as file:
-#             Temp_vol = np.array(file['tasks']['<T>'])[:, Xidx, 0, 0]
-#             Temp_hor = np.array(file['tasks']['<T>y'])[:, Xidx, 0, :]
-#             F_cond = np.array(file['tasks']['F_cond'])[:, Xidx, 0, :]
-#             F_conv = np.array(file['tasks']['F_conv'])[:, Xidx, 0, :]
-#             KE = np.array(file['tasks']['KE'])[:, Xidx, :, :]
-#             Nu_inst = np.array(file['tasks']['Nu_inst'])[:, Xidx, 0, 0]
-#             x = np.array(file['tasks']['KE'].dims[1]['x'])
-#             y = np.array(file['tasks']['KE'].dims[2]['y'])
-#             z = np.array(file['tasks']['KE'].dims[3]['z'])
-#             time = np.array(file['scales']['sim_time'])
-#     else:
-#         with h5.File(a_file, 'r') as file:
-#             Temp_vol = np.concatenate(Temp_vol, np.array(file['tasks']['<T>'])[:, Xidx, 0, 0], axis=0)
-#             Temp_hor = np.concatenate(Temp_hor, np.array(file['tasks']['<T>y'])[:, Xidx, 0, :], axis=0)
-#             F_cond = np.concatenate(F_cond, np.array(file['tasks']['F_cond'])[:, Xidx, 0, :], axis=0)
-#             F_conv = np.concatenate(F_conv, np.array(file['tasks']['F_conv'])[:, Xidx, 0, :], axis=0)
-#             KE = np.concatenate(KE, np.array(file['tasks']['KE'])[:, Xidx, :, :], axis=0)
-#             Nu_inst = np.concatenate(Nu_inst, np.array(file['tasks']['Nu_inst'])[:, Xidx, 0, 0], axis=0)
-#             time = np.concatenate(time, np.array(file['scales']['sim_time']), axis=0)
+                    KE = np.concatenate((KE, np.array(file['tasks']['KE'])[:, 0, 0, 0]), axis=0)
 
-# ASI = get_index(time, float(args['--ASI']))
-exit(1)
+if args['--flux-balance'] or args['--depth-profile']:
+    horiz_files = glob(direc + 'horiz_aves/horiz_aves_s*.h5')
+    for i, h_file in enumerate(sorted(horiz_files)):
+        if i==0:
+            with h5.File(h_file, 'r') as file:
+                horiz_time = np.array(file['scales']['sim_time'])
+                z = np.array(file['tasks']['<T>'].dims[3]['z'])
+                if args['--flux-balance']:
+                    F_cond = np.array(file['tasks']['<F_cond>'])[:, 0, 0, :]
+                    F_conv = np.array(file['tasks']['<F_conv>'])[:, 0, 0, :]
+                if args['--depth-profile']:
+                    temp_hor = np.array(file['tasks']['<T>'])[:, 0, 0, :]
+        else:
+            with h5.File(h_file, 'r') as file:
+                horiz_time = np.concatenate((horiz_time, np.array(file['scales']['sim_time'])), axis=0)
+                if args['--flux-balance']:
+                    F_cond = np.concatenate((F_cond, np.array(file['tasks']['<F_cond>'])[:, 0, 0, :]), axis=0)
+                    F_conv = np.concatenate((F_conv, np.array(file['tasks']['<F_conv>'])[:, 0, 0, :]), axis=0)
+                if args['--depth-profile']:
+                    temp_hor = np.concatenate((temp_hor, np.array(file['tasks']['<T>'])[:, 0, 0, :]), axis=0)
 
-# read_finish = timer.time() - start_time
-# print(f"Done ({read_finish:.2f} seconds)")
+if args['--gif']:
+    snap_files = glob(direc + 'snapshots/snapshots_s*.h5')
+    for i, s_file in enumerate(sorted(snap_files)):
+        if i==0:
+            with h5.File(s_file, 'r') as file:
+                snap_time = np.array(file['scales']['sim_time'])
+                temp = np.array(file['tasks']['Temp'])[:, 0, :, :]
+                vel = np.array(file['tasks']['u'])[:, 1:3, 0, :, :]
+                y = np.array(file['tasks']['Temp'].dims[2]['y'])
+                z = np.array(file['tasks']['Temp'].dims[3]['z'])
+        else:
+            with h5.File(s_file, 'r') as file:
+                snap_time = np.concatenate((snap_time, np.array(file['scales']['sim_time'])), axis=0)
+                temp = np.concatenate((temp, np.array(file['tasks']['Temp'])[:, 0, :, :]), axis=0)
+                vel = np.concatenate((vel, np.array(file['tasks']['u'])[:, 1:3, :, :]), axis=0)
+
+read_finish = timer.time() - start_time
+print(f"Done ({read_finish:.2f} seconds)")
 # ! ============== Nusselt Number ============== ! #
 if args["--info"]:
     print("====== Nusselt Number ======")
     Nu_start = timer.time()
+    ASI = get_index(sc_time, float(args['--ASI']))
+    dT = np.nanmean(deltaT[ASI:], axis=0)
     
-
-    
-    print(f"\t ΔT = {deltaT:.3f}\n"+
-          f"\t 1/ΔT = {deltaT:.3f}")
+    print(f"\t ΔT = {dT:.3f}\n"+
+          f"\t 1/ΔT = {1/dT:.3f}")
 
     with open(direc + 'run_params/runparams.json', 'r') as file:
         run_params = json.load(file)
@@ -114,44 +123,43 @@ if args["--info"]:
         Pr = run_params['Pr']
         Ta = run_params['Ta']
     with open(direc+'Nu.json', 'w') as file:
-        json.dump({'Ra': Ra, 'Pr': Pr, 'Ta': Ta, 'F_cond/F_conv': Nu_char, '1/<T>': inv_t_ave, '1/<T[z=0]>': inv_t_0_ave}, file, indent=4)
+        json.dump({'Ra': Ra, 'Pr': Pr, 'Ta': Ta, 'ΔT': dT, 'Nu': 1/dT}, file, indent=4)
     print(f"Done ({timer.time() - Nu_start:.2f}s).")
 
-# ! ============== Time-Tracks ============== ! #
+# # ! ============== Time-Tracks ============== ! #
 if args["--time-tracks"]:
     print("====== Time-Tracks ======")
     time_start = timer.time()
-    KE_vol = np.trapz((np.trapz(KE, x=y, axis=1) / (y[-1] - y[0])), x=z, axis=1) / (z[-1] - z[0])
-    KE_run_ave = rolling_average(KE_vol, time)
-    Nu_run_ave = rolling_average(Nu_inst, time)
-    PLOT_I = get_index(time, 0.1)
+    KE_run_ave = rolling_average(KE, sc_time)
+    Nu = 1/deltaT
+    Nu_run_ave = rolling_average(Nu, sc_time)
 
     fig, [KE_ax, Nu_ax] = plt.subplots(2, 1, figsize=(6, 6), sharex=True)
-    KE_ax.plot(time, KE_run_ave, label='Kinetic Energy', c='r')
-    KE_ax.scatter(time, KE_vol, marker='+', c='k')
-    KE_ax.set_xlabel(r"Time, $\tau_\nu$")
+    KE_ax.plot(sc_time, KE_run_ave, label='Kinetic Energy', c='r')
+    ylims = KE_ax.get_ylim()
+    KE_ax.scatter(sc_time, KE, marker='+', c='k')
+    KE_ax.set_ylim(ylims)
+    KE_ax.set_xlabel(r"Time, $\tau$")
     KE_ax.set_ylabel("KE")
-    KE_ax.set_ylim([0, 1.2 * np.nanmax(KE_vol[PLOT_I:])])
-
-    Nu_ax.plot(time, Nu_run_ave, label='Nusselt Number', c='r')
-    Nu_ax.scatter(time, Nu_inst, marker='+', c='k')
-    Nu_ax.set_xlabel(r"Time, $\tau_\nu$")
-    Nu_ax.set_ylabel("Nu")
-    Nu_ax.set_ylim([0, 1.2 * np.nanmax(Nu_inst[PLOT_I:])])
     
+    Nu_ax.plot(sc_time, Nu_run_ave, label='Nusselt Number', c='r')
+    ylims = Nu_ax.get_ylim()
+    Nu_ax.scatter(sc_time, Nu, marker='+', c='k')
+    Nu_ax.set_ylim(ylims)
+    Nu_ax.set_xlabel(r"Time, $\tau$")
+    Nu_ax.set_ylabel("Nu")
     plt.tight_layout()
-    plt.savefig(direc + 'time_tracks.pdf')
-
+    plt.savefig(outpath+"time_tracks.pdf")
     print(f'Done ({timer.time() - time_start:.2f}s).')
 
-# ! ============== Flux Balance ============== ! #
+# # ! ============== Flux Balance ============== ! #
 if args["--flux-balance"]:
     print("====== Flux Balance ======")
     flux_start = timer.time()
-    with open(direc+'run_params/runparams.json', 'r') as file:
-        params = json.load(file)
-        driving_flux = params['F']
-    
+#     with open(direc+'run_params/runparams.json', 'r') as file:
+#         params = json.load(file)
+#         driving_flux = params['F']
+    ASI = get_index(horiz_time, float(args['--ASI']))
     f_tot = F_cond + F_conv
     F_cond_bar = np.nanmean(F_cond[ASI:], axis=0)
     F_conv_bar = np.nanmean(F_conv[ASI:], axis=0)
@@ -165,40 +173,43 @@ if args["--flux-balance"]:
     ax.set_ylabel('z')
     plt.legend(loc='best')
     plt.tight_layout()
-    plt.savefig(direc + 'flux_balance.pdf')
+    plt.savefig(outpath+"flux_balance.pdf")
 
     print(f'Done ({timer.time() - flux_start:.2f}s).')
 
-# ! ============== Temperature Profiles ============== ! #
+# # ! ============== Temperature Profiles ============== ! #
 if args['--depth-profile']:
     print('====== Depth Profile ======')
     depth_start = timer.time()
-    temp_hor_bar = np.nanmean(Temp_hor[ASI:], axis=0)
+    ASI = get_index(horiz_time, float(args['--ASI']))
+    temp_hor_bar = np.nanmean(temp_hor[ASI:], axis=0)
 
     fig, ax = plt.subplots(1, 1, figsize=(6, 4))
-    ax.plot(temp_hor_bar/temp_hor_bar[0], z, c='k')
-    ax.set_xlabel(r'$\langle \overline{T} \rangle / \langle \overline{T[z=0]} \rangle$')
+    ax.plot(temp_hor_bar, z, c='k')
+    ax.set_xlabel(r'$\langle \overline{T} \rangle$')
     ax.set_ylabel('z')
+    ax.text(0.05, 0.05, f'ΔT = {temp_hor_bar[0]:.2f}', transform=ax.transAxes)
     plt.tight_layout()
-    plt.savefig(direc + 't_ave_depth_profile.pdf')
+    plt.savefig(outpath + 't_ave_depth_profile.pdf')
     print(f'Done ({timer.time() - depth_start:.2f}s).')
     depth_start = timer.time()
     print('Creating depth profile animation...')
     fig, ax = plt.subplots(1, 1, figsize=(6, 4))
     makedirs(f"{direc}/plots", exist_ok=True)
     fnames = []
-    for i, t in enumerate(time):
-        print(f"\t Plotting frame {i+1}/{len(time)}", end='\r')
-        ax.plot(Temp_hor[i, :]/Temp_hor[i, 0], z, c='k')
-        ax.set_xlabel(r'$\langle \overline{T} \rangle / \langle \overline{T[z=0]} \rangle$')
+    for i, t in enumerate(horiz_time):
+        print(f"\t Plotting frame {i+1}/{len(horiz_time)}", end='\r')
+        ax.plot(temp_hor[i, :], z, c='k')
+        ax.set_xlabel(r'$\langle \overline{T} \rangle$')
         ax.set_ylabel('z')
         ax.set_title(f't = {t:.2f}')
+        ax.text(0.05, 0.05, f'ΔT = {temp_hor[i, 0]:.2f}', transform=ax.transAxes)
         fnames.append(f"{direc}/plots/t_{i:04d}.png")
         plt.savefig(fnames[-1])
         ax.clear()
     print('\nDone. Creating GIF...')
     
-    with imageio.get_writer(f"{direc}/depth_profile.gif", mode="I") as writer:
+    with imageio.get_writer(f"{outpath}/depth_profile.gif", mode="I") as writer:
         for i, filename in enumerate(fnames):
             print(f"\t frame {i+1}/{len(fnames)}", end='\r')
             image = imageio.imread(filename)
@@ -210,38 +221,33 @@ if args['--depth-profile']:
 if args['--gif']:
     print('====== Heatmap GIF ======')
     heatmap_start = timer.time()
-    for i, s_file in enumerate(sorted(snapshot_files)):
-        if i==0:
-            with h5.File(s_file, 'r') as file:
-                Temp = np.array(file['tasks']['Temp'])[:, 0, :, :]
-        else:
-            with h5.File(s_file, 'r') as file:
-                Temp = np.concatenate(np.array(file['tasks']['Temp']), axis=0)
-    print(Temp.shape)
+    print(temp.shape)
     zz, yy = np.meshgrid(z, y)
+    print(yy.shape)
+    print(zz.shape)
     fnames = []
-    vmin = np.min(Temp[len(Temp) // 3:])
-    vmax = np.max(Temp[len(Temp) // 3:])
+    vmin = np.min(temp[len(temp) // 3:])
+    vmax = np.max(temp[len(temp) // 3:])
     cNorm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
     levels = np.linspace(vmin, vmax, 100, endpoint=True)
     fig, ax = plt.subplots()
     cax = fig.add_axes([0.9, 0.1, 0.03, 0.8])
     cb1 = mpl.colorbar.ColorbarBase(cax, cmap='inferno', norm=cNorm)
-    fig.subplots_adjust(left=0.05, right=0.85)
+    fig.subplots_adjust(left=0.05, right=0.8)
     print("Plotting Frames...")
-    makedirs(f'{direc}/figure', exist_ok=True)
-    for i, t in enumerate(time):
-        print(f"\t{(i+1) / len(time) * 100:3.0f}% complete", end='\r')
-        cax = ax.contourf(yy, zz, Temp[i, :, :], levels=levels, cmap='inferno', extend='both')
-        ax.set_title(rf"{t:.2f} $\tau_\nu$")
-        fnames.append(f"{direc}/figure/{i:04d}.png")
+    makedirs(f'{direc}/plots', exist_ok=True)
+    for i, t in enumerate(snap_time):
+        print(f"\t{(i+1) / len(snap_time) * 100:3.0f}% complete", end='\r')
+        cax = ax.contourf(yy, zz, temp[i, :, :], levels=levels, cmap='inferno', extend='both')
+        ax.set_title(rf"{t:.2f} $\tau$")
+        fnames.append(f"{direc}plots/{i:04d}.png")
         plt.savefig(fnames[-1])
         ax.cla()
     print("\nCreating GIF...")
-    with imageio.get_writer(f"{direc}/heatmap.gif", mode="I") as writer:
+    with imageio.get_writer(f"{outpath}/heatmap.gif", mode="I") as writer:
         for i, filename in enumerate(fnames):
             print(f"\t frame {i+1}/{len(fnames)}", end='\r')
             image = imageio.imread(filename)
             writer.append_data(image)
-    rmtree(f"{direc}/figure")
+    rmtree(f"{direc}/plots")
     print(f'\nDone ({timer.time() - heatmap_start:.2f}s).')
