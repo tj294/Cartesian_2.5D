@@ -43,7 +43,7 @@ def get_index(time, start_time):
     return np.abs(time - start_time).argmin()
 
 
-args = docopt(__doc__, version='1.0')
+args = docopt(__doc__, version='2.0')
 print(args)
 
 direc = normpath(args['FILE']) + '/'
@@ -221,10 +221,7 @@ if args['--depth-profile']:
 if args['--gif']:
     print('====== Heatmap GIF ======')
     heatmap_start = timer.time()
-    print(temp.shape)
     zz, yy = np.meshgrid(z, y)
-    print(yy.shape)
-    print(zz.shape)
     fnames = []
     vmin = np.min(temp[len(temp) // 3:])
     vmax = np.max(temp[len(temp) // 3:])
@@ -233,12 +230,14 @@ if args['--gif']:
     fig, ax = plt.subplots()
     cax = fig.add_axes([0.9, 0.1, 0.03, 0.8])
     cb1 = mpl.colorbar.ColorbarBase(cax, cmap='inferno', norm=cNorm)
-    fig.subplots_adjust(left=0.05, right=0.8)
+    fig.subplots_adjust(left=0.1, right=0.85)
     print("Plotting Frames...")
     makedirs(f'{direc}/plots', exist_ok=True)
     for i, t in enumerate(snap_time):
         print(f"\t{(i+1) / len(snap_time) * 100:3.0f}% complete", end='\r')
         cax = ax.contourf(yy, zz, temp[i, :, :], levels=levels, cmap='inferno', extend='both')
+        ax.set_xlabel('y')
+        ax.set_ylabel('z')
         ax.set_title(rf"{t:.2f} $\tau$")
         fnames.append(f"{direc}plots/{i:04d}.png")
         plt.savefig(fnames[-1])
