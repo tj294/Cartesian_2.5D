@@ -23,7 +23,7 @@ Options:
     -m=<mesh>, --mesh=<mesh>        # Processor Mesh
     --currie                        # Run with Currie 2020 heating function
     --kazemi                        # Run with Kazemi 2022 heating function
-    --fft                           # Use fixed-flux boundary conditions
+    --ff                            # Use fixed-flux boundary conditions
     -o OUT_PATH, --output OUT_PATH  # output file [default= ../DATA/output/]
     -i IN_PATH, --input IN_PATH     # path to read in initial conditions from
     -k, --kill                      # Kills the program after building the solver.
@@ -91,6 +91,8 @@ else:
 Ra = argcheck(args['--Ra'], rp.Ra)
 Pr = argcheck(args['--Pr'], rp.Pr)
 Ta = argcheck(args['--Ta'], rp.Ta)
+
+logger.info(f"Ro_c = {np.sqrt(Ra / (Pr * Ta)):1.2e}")
 
 snapshot_iter = argcheck(args['--snaps'], rp.snapshot_iter, type=int)
 horiz_iter = argcheck(args['--horiz'], rp.horiz_iter, type=int)
@@ -171,7 +173,8 @@ F = rp.F
 
 # Add coriolis term
 Tah = np.sqrt(Ta)
-theta = rp.theta
+theta_deg = argcheck(args['--theta'], rp.theta, type=float)
+theta = theta_deg * np.pi / 180
 # rotation vector
 omega = dist.VectorField(coords, name='omega', bases=all_bases)
 omega['g'][0] = 0
@@ -352,7 +355,7 @@ else:
     Temp["g"] += Lz - z
 
     first_iter = 0
-    dt = rp.dt
+    dt = max_timestep
     fh_mode = "overwrite"
 
 if not args['--test']:
@@ -366,8 +369,9 @@ if not args['--test']:
         "Pr": Pr,
         "F": F,
         "max_timestep": max_timestep,
-        "snapshot_iter": rp.snapshot_iter,
-        "analysis_iter": rp.analysis_iter,
+        "snapshot_iter": snapshot_iter,
+        "horiz_iter": horiz_iter,
+        "scalar_iter": scalar_iter,
     }
     run_params = json.dumps(run_params, indent=4)
     
@@ -395,9 +399,9 @@ if not args['--test']:
         mode=fh_mode,
         parallel=parallel,
     )
-    horiz_aves.add_task(d3.Integrate(Temp, 'y') / Ly, name='<T>', layout='g')
-    horiz_aves.add_task(d3.Integrate(f_cond, 'y') / Ly, name='<F_cond>', layout='g')
-    horiz_aves.add_task(d3.Integrate(f_conv, 'y') / Ly, name='<F_conv>', layout='g')    
+    horiz_aves.add_task(d3.Integrate(d3.Integrate(Temp, 'x'), 'y') / Ly, name='<T>', layout='g')
+    horiz_aves.add_task(d3.Integrate(d3.Integrate(f_cond, 'x'), 'y') / Ly, name='<F_cond>', layout='g')
+    horiz_aves.add_task(d3.Integrate(d3.Integrate(f_conv, 'x'), 'y') / Ly, name='<F_conv>', layout='g')    
     
     # ==================
     #      SCALARS
@@ -409,10 +413,10 @@ if not args['--test']:
         mode=fh_mode,
         parallel=parallel,
     )
-    scalars.add_task(d3.Integrate( d3.Integrate( 0.5*u@u , 'y'), 'z') / (Lz*Ly), name='KE', layout='g')
-    scalars.add_task(d3.Integrate( Temp(z=0), 'y') / Ly, name='<T(0)>', layout='g')
-    scalars.add_task(d3.Integrate( d3.Integrate(Temp, 'y'), 'z') / (Ly*Lz), name='<<T>>', layout='g')    
-    scalars.add_task(d3.Integrate( d3.Integrate( f_cond + f_conv , 'y'), 'z') / (Ly*Lz), name='F_tot', layout='g')    
+    scalars.add_task(d3.Integrate( d3.Integrate( d3.Integrate( 0.5*u@u , 'y'), 'z'), 'x') / (Lz*Ly), name='KE', layout='g')
+    scalars.add_task(d3.Integrate( d3.Integrate( Temp(z=0), 'y'), 'x') / Ly, name='<T(0)>', layout='g')
+    scalars.add_task(d3.Integrate( d3.Integrate( d3.Integrate(Temp, 'x'), 'y'), 'z') / (Ly*Lz), name='<<T>>', layout='g')    
+    scalars.add_task(d3.Integrate( d3.Integrate( d3.Integrate(f_cond + f_conv, 'x'), 'y'), 'z') / (Ly*Lz), name='F_tot', layout='g')    
     
     # analysis = solver.evaluator.add_file_handler(
     #     outpath + "analysis",
