@@ -53,7 +53,7 @@ def argcheck(argument, params, type=float):
     else:
         return params
 
-args = docopt(__doc__, version='0.2')
+args = docopt(__doc__, version='2.0')
 
 mesh = args['--mesh']
 if mesh is not None:
