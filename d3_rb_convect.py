@@ -367,6 +367,7 @@ if not args['--test']:
         "Nz": Nz,
         "Ra": Ra,
         "Pr": Pr,
+        "Ta": Ta,
         "F": F,
         "max_timestep": max_timestep,
         "snapshot_iter": snapshot_iter,
