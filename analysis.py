@@ -42,61 +42,79 @@ def rolling_average(quantity, time, window=0.1):
 
 def get_index(time, start_time):
     return np.abs(time - start_time).argmin()
+
+
 args = docopt(__doc__, version='1.0')
 print(args)
 
 direc = normpath(args['FILE']) + '/'
-analysis_files = glob(direc + 'analysis/*.h5')
-snapshot_files = glob(direc + 'snapshots/*.h5')
-Xidx = 0
+
 start_time = timer.time()
 print("====== Data Read-In ======")
-for i, a_file in enumerate(sorted(analysis_files)):
-    if i==0:
-        with h5.File(a_file, 'r') as file:
-            Temp_vol = np.array(file['tasks']['<T>'])[:, Xidx, 0, 0]
-            Temp_hor = np.array(file['tasks']['<T>y'])[:, Xidx, 0, :]
-            F_cond = np.array(file['tasks']['F_cond'])[:, Xidx, 0, :]
-            F_conv = np.array(file['tasks']['F_conv'])[:, Xidx, 0, :]
-            KE = np.array(file['tasks']['KE'])[:, Xidx, :, :]
-            Nu_inst = np.array(file['tasks']['Nu_inst'])[:, Xidx, 0, 0]
-            x = np.array(file['tasks']['KE'].dims[1]['x'])
-            y = np.array(file['tasks']['KE'].dims[2]['y'])
-            z = np.array(file['tasks']['KE'].dims[3]['z'])
-            time = np.array(file['scales']['sim_time'])
-    else:
-        with h5.File(a_file, 'r') as file:
-            Temp_vol = np.concatenate(Temp_vol, np.array(file['tasks']['<T>'])[:, Xidx, 0, 0], axis=0)
-            Temp_hor = np.concatenate(Temp_hor, np.array(file['tasks']['<T>y'])[:, Xidx, 0, :], axis=0)
-            F_cond = np.concatenate(F_cond, np.array(file['tasks']['F_cond'])[:, Xidx, 0, :], axis=0)
-            F_conv = np.concatenate(F_conv, np.array(file['tasks']['F_conv'])[:, Xidx, 0, :], axis=0)
-            KE = np.concatenate(KE, np.array(file['tasks']['KE'])[:, Xidx, :, :], axis=0)
-            Nu_inst = np.concatenate(Nu_inst, np.array(file['tasks']['Nu_inst'])[:, Xidx, 0, 0], axis=0)
-            time = np.concatenate(time, np.array(file['scales']['sim_time']), axis=0)
+if args['--info'] or args['--time-tracks']:
+    scalar_files = glob(direc + 'scalars/scalars_s*.h5')
+    for i, sc_file in enumerate(sorted(scalar_files)):
+        if i==0:
+            with h5.File(sc_file, 'r') as file:
+                sc_time = np.array(file['scales']['sim_time'])
+                deltaT = np.array(file['tasks']['<T(0)>'].dims[2])
+                if args['--time-tracks']:
+                    KE = np.array(file['tasks']['KE'])
+        else:
+            with h5.File(sc_file, 'r') as file:
+                sc_time = np.concatenate((sc_time, np.array(file['scales']['sim_time'])), axis=0)
+                deltaT = np.concatenate((deltaT, np.array(file['tasks']['<T(0)>'])), axis=0)
+                if args['--time-tracks']:
+                    KE = np.concatenate((KE, np.array(file['tasks']['KE'])), axis=0)
+    
+print(sc_time.shape)
+print(deltaT)
+print(KE.shape)
+# for i, a_file in enumerate(sorted(analysis_files)):
+#     if i==0:
+#         with h5.File(a_file, 'r') as file:
+#             Temp_vol = np.array(file['tasks']['<T>'])[:, Xidx, 0, 0]
+#             Temp_hor = np.array(file['tasks']['<T>y'])[:, Xidx, 0, :]
+#             F_cond = np.array(file['tasks']['F_cond'])[:, Xidx, 0, :]
+#             F_conv = np.array(file['tasks']['F_conv'])[:, Xidx, 0, :]
+#             KE = np.array(file['tasks']['KE'])[:, Xidx, :, :]
+#             Nu_inst = np.array(file['tasks']['Nu_inst'])[:, Xidx, 0, 0]
+#             x = np.array(file['tasks']['KE'].dims[1]['x'])
+#             y = np.array(file['tasks']['KE'].dims[2]['y'])
+#             z = np.array(file['tasks']['KE'].dims[3]['z'])
+#             time = np.array(file['scales']['sim_time'])
+#     else:
+#         with h5.File(a_file, 'r') as file:
+#             Temp_vol = np.concatenate(Temp_vol, np.array(file['tasks']['<T>'])[:, Xidx, 0, 0], axis=0)
+#             Temp_hor = np.concatenate(Temp_hor, np.array(file['tasks']['<T>y'])[:, Xidx, 0, :], axis=0)
+#             F_cond = np.concatenate(F_cond, np.array(file['tasks']['F_cond'])[:, Xidx, 0, :], axis=0)
+#             F_conv = np.concatenate(F_conv, np.array(file['tasks']['F_conv'])[:, Xidx, 0, :], axis=0)
+#             KE = np.concatenate(KE, np.array(file['tasks']['KE'])[:, Xidx, :, :], axis=0)
+#             Nu_inst = np.concatenate(Nu_inst, np.array(file['tasks']['Nu_inst'])[:, Xidx, 0, 0], axis=0)
+#             time = np.concatenate(time, np.array(file['scales']['sim_time']), axis=0)
 
-ASI = get_index(time, float(args['--ASI']))
+# ASI = get_index(time, float(args['--ASI']))
+exit(1)
 
-read_finish = timer.time() - start_time
-print(f"Done ({read_finish:.2f} seconds)")
+# read_finish = timer.time() - start_time
+# print(f"Done ({read_finish:.2f} seconds)")
 # ! ============== Nusselt Number ============== ! #
 if args["--info"]:
     print("====== Nusselt Number ======")
     Nu_start = timer.time()
-    Nu_char = np.nanmean(Nu_inst[ASI:])
-    inv_t = 1. / Temp_vol
-    inv_t_ave = np.nanmean(inv_t[ASI:])
-    inv_t_0 = 1. / Temp_hor[:, 0]
-    inv_t_0_ave = np.nanmean(inv_t_0[ASI:], axis=0)
     
-    print(f"\t F_cond/F_conv = {Nu_char:.3f}\n"+
-          f"\t 1/<T> = {inv_t_ave:.3f}\n"+
-          f"\t 1/<T[z=0]> = {inv_t_0_ave:.3f}")
+
+    
+    print(f"\t ΔT = {deltaT:.3f}\n"+
+          f"\t 1/ΔT = {deltaT:.3f}")
 
     with open(direc + 'run_params/runparams.json', 'r') as file:
         run_params = json.load(file)
         Ra = run_params['Ra']
+        Pr = run_params['Pr']
+        Ta = run_params['Ta']
     with open(direc+'Nu.json', 'w') as file:
-        json.dump({'Ra': Ra, 'F_cond/F_conv': Nu_char, '1/<T>': inv_t_ave, '1/<T[z=0]>': inv_t_0_ave}, file, indent=4)
+        json.dump({'Ra': Ra, 'Pr': Pr, 'Ta': Ta, 'F_cond/F_conv': Nu_char, '1/<T>': inv_t_ave, '1/<T[z=0]>': inv_t_0_ave}, file, indent=4)
     print(f"Done ({timer.time() - Nu_start:.2f}s).")
 
 # ! ============== Time-Tracks ============== ! #
