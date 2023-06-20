@@ -8,10 +8,22 @@ Usage:
     d3_rb_convect.py [--currie | --kazemi] [options]
 
 Options:
+    --Ra=<Ra>                       # Rayleigh number
+    --Pr=<Pr>                       # Prandtl number [default: 1]
+    --Ta=<Ta>                       # Taylor number
+    --theta=<theta>                 # co-latitude of box to rotation vector [default: 45]
+    --Ny=<Ny>                       # Horizontal resolution
+    --Nz=<Nz>                       # Vertical resolution
+    --maxdt=<maxdt>                 # Maximum timestep [default: 1e-5]
+    --stop=<stop>                   # Simulation stop time
+    --snaps=<snaps>                 # Snapshot interval [default: 500]
+    --horiz=<horiz>                 # Horizontal analysis interval [default: 100]
+    --scalar=<scalar>               # Scalar analysis interval [default: 1]
     -t --test                       # Do not save any output
     -m=<mesh>, --mesh=<mesh>        # Processor Mesh
     --currie                        # Run with Currie 2020 heating function
     --kazemi                        # Run with Kazemi 2022 heating function
+    --fft                           # Use fixed-flux boundary conditions
     -o OUT_PATH, --output OUT_PATH  # output file [default= ../DATA/output/]
     -i IN_PATH, --input IN_PATH     # path to read in initial conditions from
     -k, --kill                      # Kills the program after building the solver.
@@ -35,6 +47,12 @@ logger = logging.getLogger(__name__)
 class NaNFlowError(Exception):
     pass
 
+def argcheck(argument, params, type=float):
+    if argument:
+        return type(argument)
+    else:
+        return params
+
 args = docopt(__doc__, version='0.2')
 
 mesh = args['--mesh']
@@ -55,11 +73,28 @@ if args['--input']:
     restart_path = os.path.normpath(args['--input']) + "/"
 
 Ly, Lz = rp.Ly, rp.Lz
-Ny, Nz = rp.Ny, rp.Nz
+if args['--Nz']:
+    Nz = int(args['--Nz'])
+    if args['--Ny']:
+        Ny = int(args['--Ny'])
+    else:
+        Ny = 2*Nz
+else:
+    if args['--input']:
+        with open(restart_path + 'run_params/runparams.json', 'r') as f:
+            inparams = json.load(f)
+        Ny = inparams['Ny']
+        Nz = inparams['Nz']
+    else:
+        Ny, Nz = rp.Ny, rp.Nz
 
-Ra, Pr, Ta = rp.Ra, rp.Pr, rp.Ta
-snapshot_iter = rp.snapshot_iter
-analysis_iter = rp.analysis_iter
+Ra = argcheck(args['--Ra'], rp.Ra)
+Pr = argcheck(args['--Pr'], rp.Pr)
+Ta = argcheck(args['--Ta'], rp.Ta)
+
+snapshot_iter = argcheck(args['--snaps'], rp.snapshot_iter, type=int)
+horiz_iter = argcheck(args['--horiz'], rp.horiz_iter, type=int)
+scalar_iter = argcheck(args['--scalar'], rp.scalar_iter, type=int)
 
 if args['--kazemi']:
     heat_type = 'Kazemi'
@@ -79,11 +114,12 @@ dealias = rp.dealias
 dtype = np.float64
 timestepper = rp.timestepper
 
-stop_sim_time = rp.stop_sim_time
+stop_sim_time = argcheck(args['--stop'], rp.stop_sim_time, type=float)
 stop_wall_time = rp.stop_wall_time
 stop_iteration = rp.end_iteration
 
-max_timestep = rp.max_timestep
+max_timestep = argcheck(args['--maxdt'], rp.max_timestep, type=float)
+logger.info(f"max_timestep = {max_timestep}")
 
 # ===Initialise basis===
 coords = d3.CartesianCoordinates("x", "y", "z")
@@ -127,8 +163,8 @@ dzu_y = d3.Differentiate(u_y, coords["z"])
 dzu_x = d3.Differentiate(u_x, coords["z"])
 
 
-f_cond = -d3.Differentiate( d3.Integrate(Temp, coords['y']) / Ly, coords['z'])
-f_conv = d3.Integrate(u_z * Temp, coords['y']) / Ly
+f_cond = -d3.Differentiate(Temp, coords['z'])
+f_conv = u_z * Temp
 g_operator = d3.grad(u) - z_hat * lift(tau_u1)
 h_operator = d3.grad(Temp) - z_hat * lift(tau_T3)
 F = rp.F
@@ -240,15 +276,24 @@ problem.add_equation(
 # problem.add_equation('Tz(z=0) = 0')
 # problem.add_equation('Tz(z=Lz) = -F')
 if args['--currie'] or args['--kazemi']:
-    #* === IH3 ===
-    # # Kazemi et al. 2022
-    # # Insulating bottom, T=0 top
-    problem.add_equation('Tz(z=0) = 0')
-    problem.add_equation('Temp(z=Lz) = 0')
+    if args['--ff']:
+        # Insulating Top and Bottom
+        problem.add_equation('Tz(z=0) = 0')
+        problem.add_equation('Tz(z=Lz) = 0')
+    else:
+        #* === IH3 ===
+        # # Kazemi et al. 2022
+        # # Insulating bottom, T=0 top
+        problem.add_equation('Tz(z=0) = 0')
+        problem.add_equation('Temp(z=Lz) = 0')
 else:
-    problem.add_equation('Tz(z=0) = -F')
-    problem.add_equation('Temp(z=Lz) = 0')
-
+    if args['--ff']:
+        problem.add_equation('Tz(z=0) = -F')
+        problem.add_equation('Tz(z=Lz) = 0')
+    else:
+        problem.add_equation('Tz(z=0) = -F')
+        problem.add_equation('Temp(z=Lz) = 0')
+    
 #! === Other ===
 #* === Currie et al. 2020 ===
 # # Fixed temp bottom, insulating top:
@@ -311,24 +356,6 @@ else:
     fh_mode = "overwrite"
 
 if not args['--test']:
-    snapshots = solver.evaluator.add_file_handler(
-        outpath + "snapshots",
-        iter=snapshot_iter,
-        max_writes=5000,
-        mode=fh_mode,
-        parallel=parallel,
-    )
-    snapshots.add_tasks(solver.state, layout="g")
-    
-    # quick_snap = solver.evaluator.add_file_handler(
-    #     outpath+"quicks",
-    #     iter=100,
-    #     max_writes=50,
-    #     mode='overwrite',
-    #     parallel=parallel,
-    # )
-    # quick_snap.add_tasks(solver.state, layout='g')
-
     os.makedirs(outpath + "run_params/", exist_ok=True)
     run_params = {
         "Ly": Ly,
@@ -346,24 +373,61 @@ if not args['--test']:
     
     with open(outpath + "run_params/runparams.json", "w") as run_file:
         run_file.write(run_params)
-    # ==================
-    # ADD ANALYSIS TASKS
-    # ==================
-    analysis = solver.evaluator.add_file_handler(
-        outpath + "analysis",
-        iter=analysis_iter,
+    
+    # ====================
+    #   2.5D DATA FIELD
+    # ====================
+    snapshots = solver.evaluator.add_file_handler(
+        outpath + "snapshots",
+        iter=snapshot_iter,
         max_writes=5000,
         mode=fh_mode,
         parallel=parallel,
     )
-    analysis.add_task(f_cond, name='F_cond', layout='g') #? F_cond
-    analysis.add_task(f_conv, name='F_conv', layout='g') #? F_conv
-    analysis.add_task(0.5*u@u, name='KE', layout='g') #? KE
-    analysis.add_task(d3.Integrate(Temp, 'y') / Ly, name='<T>y', layout='g') #? <T>y
-    analysis.add_task(d3.Integrate(d3.Integrate(Temp, 'y'), 'z') / (Lz*Ly), name='<T>', layout='g') #? <T>
-    analysis.add_task((d3.Integrate(f_cond, coords['z']) / Lz) / (d3.Integrate(f_conv, coords['z']) / Lz),
-                      name='Nu_inst', layout='g') #? Nu_inst
-
+    snapshots.add_tasks(solver.state, layout="g")
+    # ==================
+    #   HORIZONTAL AVE
+    # ==================
+    horiz_aves = solver.evaluator.add_file_handler(
+        outpath + "horiz_aves",
+        iter=horiz_iter,
+        max_writes=2500,
+        mode=fh_mode,
+        parallel=parallel,
+    )
+    horiz_aves.add_task(d3.Integrate(Temp, 'y') / Ly, name='<T>', layout='g')
+    horiz_aves.add_task(d3.Integrate(f_cond, 'y') / Ly, name='<F_cond>', layout='g')
+    horiz_aves.add_task(d3.Integrate(f_conv, 'y') / Ly, name='<F_conv>', layout='g')    
+    
+    # ==================
+    #      SCALARS
+    # ==================
+    scalars = solver.evaluator.add_file_handler(
+        outpath + "scalars",
+        iter=scalar_iter,
+        max_writes=2500,
+        mode=fh_mode,
+        parallel=parallel,
+    )
+    scalars.add_task(d3.Integrate( d3.Integrate( 0.5*u@u , 'y'), 'z') / (Lz*Ly), name='KE', layout='g')
+    scalars.add_task(d3.Integrate( Temp(z=0), 'y') / Ly, name='<T(0)>', layout='g')
+    scalars.add_task(d3.Integrate( d3.Integrate(Temp, 'y'), 'z') / (Ly*Lz), name='<<T>>', layout='g')    
+    scalars.add_task(d3.Integrate( d3.Integrate( f_cond + f_conv , 'y'), 'z') / (Ly*Lz), name='F_tot', layout='g')    
+    
+    # analysis = solver.evaluator.add_file_handler(
+    #     outpath + "analysis",
+    #     iter=analysis_iter,
+    #     max_writes=5000,
+    #     mode=fh_mode,
+    #     parallel=parallel,
+    # )
+    # analysis.add_task(f_cond, name='F_cond', layout='g') #? F_cond
+    # analysis.add_task(f_conv, name='F_conv', layout='g') #? F_conv
+    # analysis.add_task(0.5*u@u, name='KE', layout='g') #? KE
+    # analysis.add_task(d3.Integrate(Temp, 'y') / Ly, name='<T>y', layout='g') #? <T>y
+    # analysis.add_task(d3.Integrate(d3.Integrate(Temp, 'y'), 'z') / (Lz*Ly), name='<T>', layout='g') #? <T>
+    # analysis.add_task((d3.Integrate(f_cond, coords['z']) / Lz) / (d3.Integrate(f_conv, coords['z']) / Lz),
+    #                   name='Nu_inst', layout='g') #? Nu_inst
 
 solver.stop_sim_time = stop_sim_time
 solver.stop_wall_time = stop_wall_time
