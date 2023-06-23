@@ -459,7 +459,6 @@ CFL = d3.CFL(
     max_dt=max_timestep,
 )
 CFL.add_velocity(u)
-flag = True
 flow = d3.GlobalFlowProperty(solver, cadence=10)
 flow.add_property(np.sqrt(u @ u), name="Re")
 if args['--kill']:
@@ -477,12 +476,6 @@ try:
             )
         if np.isnan(max_Re):
             raise NaNFlowError
-        if (solver.iteration > solver.warmup_iterations) & flag:
-            logger.info(
-                "WARM-UP COMPLETE: Max dt changed to 1e-2"
-            )
-            CFL.max_dt = 1e-2
-            flag = False
 except KeyboardInterrupt:
     logger.error("User quit loop. Triggering end of main loop")
     raise
