@@ -21,6 +21,7 @@ Options:
 from docopt import docopt
 import h5py as h5
 import numpy as np
+import re
 import time as timer
 import matplotlib.pyplot as plt
 import matplotlib as mpl
@@ -59,7 +60,8 @@ start_time = timer.time()
 print("====== Data Read-In ======")
 if args['--info'] or args['--time-tracks']:
     scalar_files = glob(direc + 'scalars/scalars_s*.h5')
-    for i, sc_file in enumerate(sorted(scalar_files)):
+    scalar_files.sort(key=lambda f: int(re.sub('\D', '', f)))
+    for i, sc_file in enumerate(scalar_files):
         if i==0:
             with h5.File(sc_file, 'r') as file:
                 sc_time = np.array(file['scales']['sim_time'])
@@ -75,7 +77,8 @@ if args['--info'] or args['--time-tracks']:
 
 if args['--flux-balance'] or args['--depth-profile']:
     horiz_files = glob(direc + 'horiz_aves/horiz_aves_s*.h5')
-    for i, h_file in enumerate(sorted(horiz_files)):
+    horiz_files.sort(key=lambda f: int(re.sub('\D', '', f))) # sort by number, avoiding s1, s10, s11, etc.
+    for i, h_file in enumerate(horiz_files):
         if i==0:
             with h5.File(h_file, 'r') as file:
                 horiz_time = np.array(file['scales']['sim_time'])
@@ -96,7 +99,8 @@ if args['--flux-balance'] or args['--depth-profile']:
 
 if args['--gif']:
     snap_files = glob(direc + 'snapshots/snapshots_s*.h5')
-    for i, s_file in enumerate(sorted(snap_files)):
+    snap_files.sort(key=lambda f: int(re.sub('\D', '', f)))
+    for i, s_file in enumerate(snap_files):
         if i==0:
             with h5.File(s_file, 'r') as file:
                 snap_time = np.array(file['scales']['sim_time'])
@@ -118,7 +122,9 @@ if args["--info"]:
     print("====== Nusselt Number ======")
     Nu_start = timer.time()
     ASI = get_index(sc_time, float(args['--ASI']))
-    dT = np.nanmean(deltaT[ASI:], axis=0)
+    AEI = get_index(sc_time, float(2.0))
+    AEI = None
+    dT = np.nanmean(deltaT[ASI:AEI], axis=0)
     
     print(f"\t ΔT = {dT:.3f}\n"+
           f"\t 1/ΔT = {1/dT:.3f}")
@@ -136,21 +142,29 @@ if args["--info"]:
 if args["--time-tracks"]:
     print("====== Time-Tracks ======")
     time_start = timer.time()
-    KE_run_ave = rolling_average(KE, sc_time)
+    if len(deltaT) > 50000:
+        skip_cadence = 100
+    elif len(deltaT) > 5000:
+        skip_cadence = 10
+    else:
+        skip_cadence = 1
+    AEI = get_index(sc_time, float(1.9))
+    AEI = None
+    # skip_cadence = 1
+    KE_run_ave = rolling_average(KE[::skip_cadence], sc_time[::skip_cadence])
     Nu = 1/deltaT
-    Nu_run_ave = rolling_average(Nu, sc_time)
-
+    Nu_run_ave = rolling_average(Nu[::skip_cadence], sc_time[::skip_cadence])
     fig, [KE_ax, Nu_ax] = plt.subplots(2, 1, figsize=(6, 6), sharex=True)
-    KE_ax.plot(sc_time, KE_run_ave, label='Kinetic Energy', c='r')
+    KE_ax.plot(sc_time[:AEI:skip_cadence], KE_run_ave[:AEI], label='Kinetic Energy', c='r')
     ylims = KE_ax.get_ylim()
-    KE_ax.scatter(sc_time, KE, marker='+', c='k')
+    KE_ax.scatter(sc_time[:AEI:skip_cadence], KE[:AEI:skip_cadence], marker='+', c='k')
     KE_ax.set_ylim(ylims)
     KE_ax.set_xlabel(r"Time, $\tau$")
     KE_ax.set_ylabel("KE")
     
-    Nu_ax.plot(sc_time, Nu_run_ave, label='Nusselt Number', c='r')
+    Nu_ax.plot(sc_time[:AEI:skip_cadence], Nu_run_ave[:AEI], label='Nusselt Number', c='r')
     ylims = Nu_ax.get_ylim()
-    Nu_ax.scatter(sc_time, Nu, marker='+', c='k')
+    Nu_ax.scatter(sc_time[:AEI:skip_cadence], Nu[:AEI:skip_cadence], marker='+', c='k')
     Nu_ax.set_ylim(ylims)
     Nu_ax.set_xlabel(r"Time, $\tau$")
     Nu_ax.set_ylabel("Nu")
@@ -166,10 +180,12 @@ if args["--flux-balance"]:
 #         params = json.load(file)
 #         driving_flux = params['F']
     ASI = get_index(horiz_time, float(args['--ASI']))
+    # AEI = get_index(horiz_time, float(2.0))
+    AEI = None
     f_tot = F_cond + F_conv
-    F_cond_bar = np.nanmean(F_cond[ASI:], axis=0)
-    F_conv_bar = np.nanmean(F_conv[ASI:], axis=0)
-    F_tot_bar = np.nanmean(f_tot[ASI:], axis=0)
+    F_cond_bar = np.nanmean(F_cond[ASI:AEI], axis=0)
+    F_conv_bar = np.nanmean(F_conv[ASI:AEI], axis=0)
+    F_tot_bar = np.nanmean(f_tot[ASI:AEI], axis=0)
 
     fig, ax = plt.subplots(1, 1, figsize=(6, 4))
     ax.plot(F_cond_bar, z, label=r'$F_{cond}$', c='b')
@@ -203,16 +219,18 @@ if args['--depth-profile']:
     fig, ax = plt.subplots(1, 1, figsize=(6, 4))
     makedirs(f"{direc}/plots", exist_ok=True)
     fnames = []
+    cadence = 10
     for i, t in enumerate(horiz_time):
-        print(f"\t Plotting frame {i+1}/{len(horiz_time)}", end='\r')
-        ax.plot(temp_hor[i, :], z, c='k')
-        ax.set_xlabel(r'$\langle \overline{T} \rangle$')
-        ax.set_ylabel('z')
-        ax.set_title(f't = {t:.2f}')
-        ax.text(0.05, 0.05, f'ΔT = {temp_hor[i, 0]:.2f}', transform=ax.transAxes)
-        fnames.append(f"{direc}/plots/t_{i:04d}.png")
-        plt.savefig(fnames[-1])
-        ax.clear()
+        if i % cadence == 0:
+            print(f"\t Plotting frame {i+1}/{len(horiz_time)}", end='\r')
+            ax.plot(temp_hor[i, :], z, c='k')
+            ax.set_xlabel(r'$\langle \overline{T} \rangle$')
+            ax.set_ylabel('z')
+            ax.set_title(f't = {t:.2f}')
+            ax.text(0.05, 0.05, f'ΔT = {temp_hor[i, 0]:.2f}', transform=ax.transAxes)
+            fnames.append(f"{direc}/plots/t_{i:04d}.png")
+            plt.savefig(fnames[-1])
+            ax.clear()
     print('\nDone. Creating GIF...')
     
     with imageio.get_writer(f"{outpath}/depth_profile.gif", mode="I") as writer:
