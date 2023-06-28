@@ -247,31 +247,41 @@ if args['--gif']:
     heatmap_start = timer.time()
     zz, yy = np.meshgrid(z, y)
     fnames = []
-    vmin = np.min(temp[len(temp) // 3:])
-    vmax = np.max(temp[len(temp) // 3:])
-    cNorm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
-    levels = np.linspace(vmin, vmax, 100, endpoint=True)
+    # vmin = np.min(temp[len(temp) // 3:])
+    # vmax = np.max(temp[len(temp) // 3:])
+    # vmin = 1e-3
+    vmin = np.min(temp)
+    vmax = 1
+    print(vmin, vmax)
+    # cNorm = mpl.colors.LogNorm(vmin=vmin, vmax=vmax, clip=False)
+    cNorm = mpl.colors.SymLogNorm(linthresh=1e-2, linscale=0.1, vmin=vmin, vmax=vmax, clip=False)
+    # all values of temp below 0, set to 0
+    # temp[temp < 0] = vmin
+    levels = np.logspace(-3, 0, 100, endpoint=True)
     fig, ax = plt.subplots()
     cax = fig.add_axes([0.9, 0.1, 0.03, 0.8])
-    cb1 = mpl.colorbar.ColorbarBase(cax, cmap='inferno', norm=cNorm)
+    cb1 = mpl.colorbar.ColorbarBase(cax, cmap='inferno', norm=cNorm, extend='min')
     fig.subplots_adjust(left=0.1, right=0.85)
-    print("Plotting Frames...")
+    print("Plotting Frames...") 
     makedirs(f'{direc}/plots', exist_ok=True)
     yspace = len(y)//15
     zspace = len(z)//5
+    cadence = 5
     for i, t in enumerate(snap_time):
-        print(f"\t{(i+1) / len(snap_time) * 100:3.0f}% complete", end='\r')
-        cax = ax.contourf(yy, zz, temp[i, :, :], levels=levels, cmap='inferno', extend='both')
-        warnings.filterwarnings("ignore")
-        ax.quiver(yy[::yspace, ::zspace], zz[::yspace, ::zspace],
-                vel[i, 0, ::yspace, ::zspace], vel[i, 1, ::yspace, ::zspace],
-                color='w', pivot='mid')    
-        ax.set_xlabel('y')
-        ax.set_ylabel('z')
-        ax.set_title(rf"{t:.2f} $\tau$")
-        fnames.append(f"{direc}plots/{i:04d}.png")
-        plt.savefig(fnames[-1])
-        ax.cla()
+        if i % cadence == 0:
+            print(f"\t{(i+1) / len(snap_time) * 100:3.0f}% complete", end='\r')
+            # print(f"{i+1}/{len(snap_time)}", end='\r')
+            cax = ax.contourf(yy, zz, temp[i, :, :], cmap='inferno', extend='min', levels=levels, norm=cNorm)
+            warnings.filterwarnings("ignore")
+            ax.quiver(yy[::yspace, ::zspace], zz[::yspace, ::zspace],
+                    vel[i, 0, ::yspace, ::zspace], vel[i, 1, ::yspace, ::zspace],
+                    color='w', pivot='mid')    
+            ax.set_xlabel('y')
+            ax.set_ylabel('z')
+            ax.set_title(rf"{t:.2f} $\tau$")
+            fnames.append(f"{direc}plots/{i:04d}.png")
+            plt.savefig(fnames[-1])
+            ax.cla()
     print("\nCreating GIF...")
     with imageio.get_writer(f"{outpath}/heatmap.gif", mode="I") as writer:
         for i, filename in enumerate(fnames):
