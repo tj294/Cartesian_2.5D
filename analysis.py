@@ -112,7 +112,7 @@ if args['--gif']:
             with h5.File(s_file, 'r') as file:
                 snap_time = np.concatenate((snap_time, np.array(file['scales']['sim_time'])), axis=0)
                 temp = np.concatenate((temp, np.array(file['tasks']['Temp'])[:, 0, :, :]), axis=0)
-                vel = np.concatenate((vel, np.array(file['tasks']['u'])[:, 1:3, :, :]), axis=0)
+                vel = np.concatenate((vel, np.array(file['tasks']['u'])[:, 1:3, 0, :, :]), axis=0)
                 
 
 read_finish = timer.time() - start_time
