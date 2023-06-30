@@ -424,6 +424,7 @@ if not args['--test']:
         parallel=parallel,
     )
     scalars.add_task(d3.Integrate( d3.Integrate( d3.Integrate( 0.5*u@u , 'y'), 'z'), 'x') / (Lz*Ly), name='KE', layout='g')
+    scalars.add_task(d3.Integrate( d3.Integrate( d3.Integrate( np.sqrt(u @ u), 'x'), 'y'), 'z') / (Lz*Ly), name='Re', layout='g')
     scalars.add_task(d3.Integrate( d3.Integrate( Temp(z=0), 'y'), 'x') / Ly, name='<T(0)>', layout='g')
     scalars.add_task(d3.Integrate( d3.Integrate( d3.Integrate(Temp, 'x'), 'y'), 'z') / (Ly*Lz), name='<<T>>', layout='g')    
     scalars.add_task(d3.Integrate( d3.Integrate( d3.Integrate(f_cond + f_conv, 'x'), 'y'), 'z') / (Ly*Lz), name='F_tot', layout='g')    
