@@ -25,6 +25,7 @@ Options:
     --currie                        # Run with Currie 2020 heating function
     --kazemi                        # Run with Kazemi 2022 heating function
     --ff                            # Use fixed-flux boundary conditions
+    --no-slip                       # Use no-slip boundary conditions
     -o OUT_PATH, --output OUT_PATH  # output file [default= ../DATA/output/]
     -i IN_PATH, --input IN_PATH     # path to read in initial conditions from
     -k, --kill                      # Kills the program after building the solver.
@@ -315,7 +316,7 @@ else:
 #? === Velocity Boundary Conditions ===
 #* === Stress-Free ===
 # d(ux)/dz|(z=0, D) = 0
-if args['--kazemi']:
+if args['--no-slip']:
     #* === No-Slip  ===
     problem.add_equation("u(z=0) = 0")
     problem.add_equation("u(z=Lz) = 0")
