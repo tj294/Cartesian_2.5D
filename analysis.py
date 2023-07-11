@@ -253,8 +253,9 @@ if args['--gif']:
     vmin = np.min(temp)
     vmax = 1
     print(vmin, vmax)
+    linthresh = np.abs(vmin)
     # cNorm = mpl.colors.LogNorm(vmin=vmin, vmax=vmax, clip=False)
-    cNorm = mpl.colors.SymLogNorm(linthresh=1e-2, linscale=0.1, vmin=vmin, vmax=vmax, clip=False)
+    cNorm = mpl.colors.SymLogNorm(linthresh=linthresh, linscale=0.1, vmin=vmin, vmax=vmax, clip=False)
     # all values of temp below 0, set to 0
     # temp[temp < 0] = vmin
     levels = np.logspace(-3, 0, 100, endpoint=True)
