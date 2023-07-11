@@ -106,7 +106,12 @@ elif args['--currie']:
     heat_type = 'Currie'
 else:
     heat_type = None 
-logger.info(f"Ra={Ra:1.1e}, Pr={Pr:1.1e}, Ta={Ta:1.1e}\nLy={Ly}, Lz={Lz}, Ny={Ny}, Nz={Nz}, Heated={heat_type}")
+if args['--no-slip']:
+    slip_type = "No Slip"
+else:
+    slip_type = "Free Slip"
+
+logger.info(f"Ra={Ra:1.1e}, Pr={Pr:1.1e}, Ta={Ta:1.1e}\nLy={Ly}, Lz={Lz}, Ny={Ny}, Nz={Nz}, Heated={heat_type}, {slip_type}")
 
 # parallel = "gather"
 parallel = None
