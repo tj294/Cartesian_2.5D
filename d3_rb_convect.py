@@ -383,6 +383,7 @@ if not args['--test']:
         "Ra": Ra,
         "Pr": Pr,
         "Ta": Ta,
+        "theta": theta_deg,
         "F": F,
         "max_timestep": max_timestep,
         "snapshot_iter": snapshot_iter,
