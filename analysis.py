@@ -15,6 +15,7 @@ Options:
     -g --gif                        # Create a gif of the convection
     -h --help                       # Display this help message
     -v --version                    # Display the version
+    --cadence [CADENCE]             # Cadence of the gifs [default: 1]
     --ASI [TIME]                    # Sim-time to begin average [default: 0.65]
 
 """
@@ -219,7 +220,7 @@ if args['--depth-profile']:
     fig, ax = plt.subplots(1, 1, figsize=(6, 4))
     makedirs(f"{direc}/plots", exist_ok=True)
     fnames = []
-    cadence = 10
+    cadence = int(args['--cadence'])
     for i, t in enumerate(horiz_time):
         if i % cadence == 0:
             print(f"\t Plotting frame {i+1}/{len(horiz_time)}", end='\r')
@@ -267,7 +268,7 @@ if args['--gif']:
     makedirs(f'{direc}/plots', exist_ok=True)
     yspace = len(y)//15
     zspace = len(z)//5
-    cadence = 5
+    cadence = int(args['--cadence'])
     for i, t in enumerate(snap_time):
         if i % cadence == 0:
             print(f"\t{(i+1) / len(snap_time) * 100:3.0f}% complete", end='\r')
