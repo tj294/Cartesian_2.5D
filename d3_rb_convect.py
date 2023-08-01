@@ -47,6 +47,7 @@ import rb_params as rp
 logger = logging.getLogger(__name__)
 
 class NaNFlowError(Exception):
+    exit_code = -50
     pass
 
 def argcheck(argument, params, type=float):
@@ -55,6 +56,7 @@ def argcheck(argument, params, type=float):
     else:
         return params
 
+exit_code = 0
 args = docopt(__doc__, version='2.0')
 
 mesh = args['--mesh']
@@ -70,6 +72,7 @@ logger.info("running on processor mesh={}".format(mesh))
 if not (args['--test']):
     outpath = os.path.normpath(args['--output']) + "/"
     os.makedirs(outpath, exist_ok=True)
+    logger.info("Writing to {}".format(outpath))
 
 if args['--input']:
     restart_path = os.path.normpath(args['--input']) + "/"
@@ -265,6 +268,8 @@ elif args['--tau']=='viscous':
     problem.add_equation(
         "dt(Temp) + lift(tau_T4) - (div(h_operator)) = -(u@h_operator) + heat"
     )
+else:
+    raise ValueError(f'Invalid tau value {args["--tau"]}. Must be "viscous" or "thermal".')
 
 #? === Driving Boundary Conditions ===
 #! === Boundary Driven ===
@@ -326,6 +331,7 @@ if args['--no-slip']:
     problem.add_equation("u(z=0) = 0")
     problem.add_equation("u(z=Lz) = 0")
 else:
+    #* === Free-Slip ===
     problem.add_equation("dzu_y(z=0) = 0")
     problem.add_equation("dzu_y(z=Lz) = 0")
     problem.add_equation("dzu_x(z=0) = 0")
@@ -354,15 +360,6 @@ if args['--input']:
         print("{} does not exist.".format(restart_path + "snapshots_s1.h5"))
         exit(-10)
 else:
-    # amp = 1e-3
-    # noise = dist.Field(name='noise', bases=zbasis)
-    # noise.fill_random("g", seed=42, distribution="standard_normal")
-    # noise.low_pass_filter(scales=0.25)
-    # noise.high_pass_filter(scales=0.125)
-    # Temp["g"] += amp * noise['g'] * (1 - z**2)
-    # Temp['g'] += Lz - z
-
-
     Temp.fill_random("g", seed=42, distribution="normal", scale=1e-5)
     # Temp.low_pass_filter(scales=0.25)
     # Temp.high_pass_filter(scales=0.125)
@@ -486,11 +483,13 @@ try:
             raise NaNFlowError
 except KeyboardInterrupt:
     logger.error("User quit loop. Triggering end of main loop")
-    raise
+    exit_code = -1
 except NaNFlowError:
     logger.error("Max Re is NaN. Triggering end of loop")
+    exit_code = -50
 except:
     logger.error("Unknown error raised. Triggering end of loop")
+    exit_code = -10
 finally:
     # if not args.test:
     #     # logger.info("Merging outputs...")
@@ -502,3 +501,5 @@ finally:
     horiz_writes = (total_iterations) // horiz_iter
     scalar_writes = (total_iterations) // scalar_iter
     logger.info("Snaps = {}, Horiz = {}, Scalars = {}".format(snap_writes, horiz_writes, scalar_writes))
+    logger.info("Written to {}".format(outpath))
+    exit(exit_code)
