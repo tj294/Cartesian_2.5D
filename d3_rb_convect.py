@@ -40,15 +40,18 @@ from glob import glob
 from docopt import docopt
 import json
 from mpi4py import MPI
+
 ncpu = MPI.COMM_WORLD.size
 
 import rb_params as rp
 
 logger = logging.getLogger(__name__)
 
+
 class NaNFlowError(Exception):
     exit_code = -50
     pass
+
 
 def argcheck(argument, params, type=float):
     if argument:
@@ -56,65 +59,68 @@ def argcheck(argument, params, type=float):
     else:
         return params
 
-exit_code = 0
-args = docopt(__doc__, version='2.0')
 
-mesh = args['--mesh']
+exit_code = 0
+args = docopt(__doc__, version="2.0")
+
+mesh = args["--mesh"]
 if mesh is not None:
-	mesh = mesh.split(',')
-	mesh = [int(mesh[0]), int(mesh[1])]
+    mesh = mesh.split(",")
+    mesh = [int(mesh[0]), int(mesh[1])]
 logger.info("ncpu = {}".format(ncpu))
 log2 = np.log2(ncpu)
 if log2 == int(log2):
-	mesh = [int(2**np.ceil(log2/2)), int(2**np.floor(log2/2))]
+    mesh = [int(2 ** np.ceil(log2 / 2)), int(2 ** np.floor(log2 / 2))]
 logger.info("running on processor mesh={}".format(mesh))
 
-if not (args['--test']):
-    outpath = os.path.normpath(args['--output']) + "/"
+if not (args["--test"]):
+    outpath = os.path.normpath(args["--output"]) + "/"
     os.makedirs(outpath, exist_ok=True)
     logger.info("Writing to {}".format(outpath))
 
-if args['--input']:
-    restart_path = os.path.normpath(args['--input']) + "/"
+if args["--input"]:
+    restart_path = os.path.normpath(args["--input"]) + "/"
 
 Ly, Lz = rp.Ly, rp.Lz
-if args['--Nz']:
-    Nz = int(args['--Nz'])
-    if args['--Ny']:
-        Ny = int(args['--Ny'])
+if args["--Nz"]:
+    Nz = int(args["--Nz"])
+    if args["--Ny"]:
+        Ny = int(args["--Ny"])
     else:
-        Ny = 2*Nz
+        Ny = 2 * Nz
 else:
-    if args['--input']:
-        with open(restart_path + 'run_params/runparams.json', 'r') as f:
+    if args["--input"]:
+        with open(restart_path + "run_params/runparams.json", "r") as f:
             inparams = json.load(f)
-        Ny = inparams['Ny']
-        Nz = inparams['Nz']
+        Ny = inparams["Ny"]
+        Nz = inparams["Nz"]
     else:
         Ny, Nz = rp.Ny, rp.Nz
 
-Ra = argcheck(args['--Ra'], rp.Ra)
-Pr = argcheck(args['--Pr'], rp.Pr)
-Ta = argcheck(args['--Ta'], rp.Ta)
+Ra = argcheck(args["--Ra"], rp.Ra)
+Pr = argcheck(args["--Pr"], rp.Pr)
+Ta = argcheck(args["--Ta"], rp.Ta)
 
 logger.info(f"Ro_c = {np.sqrt(Ra / (Pr * Ta)):1.2e}")
 
-snapshot_iter = argcheck(args['--snaps'], rp.snapshot_iter, type=int)
-horiz_iter = argcheck(args['--horiz'], rp.horiz_iter, type=int)
-scalar_iter = argcheck(args['--scalar'], rp.scalar_iter, type=int)
+snapshot_iter = argcheck(args["--snaps"], rp.snapshot_iter, type=int)
+horiz_iter = argcheck(args["--horiz"], rp.horiz_iter, type=int)
+scalar_iter = argcheck(args["--scalar"], rp.scalar_iter, type=int)
 
-if args['--kazemi']:
-    heat_type = 'Kazemi'
-elif args['--currie']:
-    heat_type = 'Currie'
+if args["--kazemi"]:
+    heat_type = "Kazemi"
+elif args["--currie"]:
+    heat_type = "Currie"
 else:
-    heat_type = None 
-if args['--no-slip']:
+    heat_type = None
+if args["--no-slip"]:
     slip_type = "No Slip"
 else:
     slip_type = "Free Slip"
 
-logger.info(f"Ra={Ra:1.1e}, Pr={Pr:1.1e}, Ta={Ta:1.1e}\nLy={Ly}, Lz={Lz}, Ny={Ny}, Nz={Nz}, Heated={heat_type}, {slip_type}")
+logger.info(
+    f"Ra={Ra:1.1e}, Pr={Pr:1.1e}, Ta={Ta:1.1e}\nLy={Ly}, Lz={Lz}, Ny={Ny}, Nz={Nz}, Heated={heat_type}, {slip_type}"
+)
 
 # parallel = "gather"
 parallel = None
@@ -126,11 +132,11 @@ dealias = rp.dealias
 dtype = np.float64
 timestepper = rp.timestepper
 
-stop_sim_time = argcheck(args['--stop'], rp.stop_sim_time, type=float)
+stop_sim_time = argcheck(args["--stop"], rp.stop_sim_time, type=float)
 stop_wall_time = rp.stop_wall_time
 stop_iteration = rp.end_iteration
 
-max_timestep = argcheck(args['--maxdt'], rp.max_timestep, type=float)
+max_timestep = argcheck(args["--maxdt"], rp.max_timestep, type=float)
 logger.info(f"max_timestep = {max_timestep}")
 
 # ===Initialise basis===
@@ -175,7 +181,7 @@ dzu_y = d3.Differentiate(u_y, coords["z"])
 dzu_x = d3.Differentiate(u_x, coords["z"])
 
 
-f_cond = -d3.Differentiate(Temp, coords['z'])
+f_cond = -d3.Differentiate(Temp, coords["z"])
 f_conv = u_z * Temp
 g_operator = d3.grad(u) - z_hat * lift(tau_u1)
 h_operator = d3.grad(Temp) - z_hat * lift(tau_T3)
@@ -183,13 +189,13 @@ F = rp.F
 
 # Add coriolis term
 Tah = np.sqrt(Ta)
-theta_deg = argcheck(args['--theta'], rp.theta, type=float)
+theta_deg = argcheck(args["--theta"], rp.theta, type=float)
 theta = theta_deg * np.pi / 180
 # rotation vector
-omega = dist.VectorField(coords, name='omega', bases=all_bases)
-omega['g'][0] = 0
-omega['g'][1] = np.sin(theta)
-omega['g'][2] = np.cos(theta)
+omega = dist.VectorField(coords, name="omega", bases=all_bases)
+omega["g"][0] = 0
+omega["g"][1] = np.sin(theta)
+omega["g"][2] = np.cos(theta)
 
 # #? =================
 # #! HEATING FUNCTION
@@ -201,7 +207,7 @@ H = rp.convection_height
 Delta = rp.heating_width * H
 
 heat = dist.Field(bases=zbasis)
-if args['--currie']:
+if args["--currie"]:
     heat_func = lambda z: (F / Delta) * (
         1 + np.cos((2 * np.pi * (z - (Delta / 2))) / Delta)
     )
@@ -209,44 +215,47 @@ if args['--currie']:
         -1 - np.cos((2 * np.pi * (z - Lz + (Delta / 2))) / Delta)
     )
 
-    heat ['g'] = np.piecewise(z, [z <= Delta, z >= Lz - Delta], [heat_func, cool_func, 0])
-elif args['--kazemi']:
+    heat["g"] = np.piecewise(
+        z, [z <= Delta, z >= Lz - Delta], [heat_func, cool_func, 0]
+    )
+elif args["--kazemi"]:
     l = 0.1
     beta = 1
-    a = 1 / (0.1 * (1 - np.exp(-1/l)))
-    heat_func = lambda z: a * np.exp(-z/l) - beta
-    heat['g'] = heat_func(z)
+    a = 1 / (0.1 * (1 - np.exp(-1 / l)))
+    heat_func = lambda z: a * np.exp(-z / l) - beta
+    heat["g"] = heat_func(z)
 else:
     #! === No Heating ===
-    heat['g'] = np.zeros(heat['g'].shape)
+    heat["g"] = np.zeros(heat["g"].shape)
 
-if args['--function']:
+if args["--function"]:
     import matplotlib.pyplot as plt
+
     fig, ax = plt.subplots(figsize=(5, 5))
-    ax.scatter(heat['g'], z, c='k', s=5)
-    if args['--currie']:
-        ax.axhspan(0, Delta, color='r', alpha=0.2)
-        ax.text(np.min(heat['g']), 0.05, 'Heating Zone', color='r')
-        ax.axhspan(0.5-(H/2), 0.5+(H/2), color='k', alpha=0.2)
-        ax.text(np.min(heat['g']), 0.5, 'Convection Zone', color='k')
-        ax.axhspan(Lz-Delta, 1, color='blue', alpha=0.2)
-        ax.text(0.4*np.max(heat['g']), 0.95, 'Cooling Zone', color='blue')
-        ax.set_xlabel('Heat')
-        ax.set_ylabel('z')
-        ax.set_title('Currie Heat Function')
-    if args['--kazemi']:
+    ax.scatter(heat["g"], z, c="k", s=5)
+    if args["--currie"]:
+        ax.axhspan(0, Delta, color="r", alpha=0.2)
+        ax.text(np.min(heat["g"]), 0.05, "Heating Zone", color="r")
+        ax.axhspan(0.5 - (H / 2), 0.5 + (H / 2), color="k", alpha=0.2)
+        ax.text(np.min(heat["g"]), 0.5, "Convection Zone", color="k")
+        ax.axhspan(Lz - Delta, 1, color="blue", alpha=0.2)
+        ax.text(0.4 * np.max(heat["g"]), 0.95, "Cooling Zone", color="blue")
+        ax.set_xlabel("Heat")
+        ax.set_ylabel("z")
+        ax.set_title("Currie Heat Function")
+    if args["--kazemi"]:
         line = -l * np.log(beta / a)
-        ax.axhspan(0, line, color='r', alpha=0.2)
-        ax.axhspan(line, 1, color='blue', alpha=0.2)
-        ax.text(8, 0.1, 'Heating Zone', ha='center', color='r')
-        ax.text(8, 0.6, 'Cooling Zone', ha='center', color='blue')
-        ax.set_xlabel('Heat')
-        ax.set_ylabel('z')
-        ax.set_title('Kazemi Heat Function')
-    if not args['--test']:
-        fig.savefig(outpath+'heat_func.pdf')
+        ax.axhspan(0, line, color="r", alpha=0.2)
+        ax.axhspan(line, 1, color="blue", alpha=0.2)
+        ax.text(8, 0.1, "Heating Zone", ha="center", color="r")
+        ax.text(8, 0.6, "Cooling Zone", ha="center", color="blue")
+        ax.set_xlabel("Heat")
+        ax.set_ylabel("z")
+        ax.set_title("Kazemi Heat Function")
+    if not args["--test"]:
+        fig.savefig(outpath + "heat_func.pdf")
     else:
-        fig.savefig('heat_func.pdf')
+        fig.savefig("heat_func.pdf")
         exit(0)
 
 # === Initialise Problem ===
@@ -254,14 +263,14 @@ problem = d3.IVP(
     [u, p, Temp, tau_u1, tau_u2, tau_T3, tau_T4, tau_p], time="t", namespace=locals()
 )
 problem.add_equation("trace(g_operator) + tau_p= 0")  # needs a gauge fixing term
-if args['--tau']=='thermal':
+if args["--tau"] == "thermal":
     problem.add_equation(
         "dt(u) - (div(g_operator)) + grad(p) - (Ra / Pr)*Temp*z_hat + lift(tau_u2) = - u@g_operator - Tah*cross(omega, u)"
     )
     problem.add_equation(
         "dt(Temp) + lift(tau_T4) - (1/Pr) * (div(h_operator)) = -(u@h_operator) + heat"
     )
-elif args['--tau']=='viscous':
+elif args["--tau"] == "viscous":
     problem.add_equation(
         "dt(u) - (div(g_operator)) + grad(p) - (Ra * Pr)*Temp*z_hat + lift(tau_u2) = - u@g_operator - Tah*cross(omega, u)"
     )
@@ -269,16 +278,18 @@ elif args['--tau']=='viscous':
         "dt(Temp) + lift(tau_T4) - (div(h_operator)) = -(u@h_operator) + heat"
     )
 else:
-    raise ValueError(f'Invalid tau value {args["--tau"]}. Must be "viscous" or "thermal".')
+    raise ValueError(
+        f'Invalid tau value {args["--tau"]}. Must be "viscous" or "thermal".'
+    )
 
-#? === Driving Boundary Conditions ===
+# ? === Driving Boundary Conditions ===
 #! === Boundary Driven ===
-#* === RB1 (Temp gradient)===
+# * === RB1 (Temp gradient)===
 # # T=0 at top, T=1 at bottom
 # problem.add_equation("Temp(z=0) = 1")
 # problem.add_equation("Temp(z=Lz) = 0")
 
-#* === RB2 (fixed flux) ===
+# * === RB2 (fixed flux) ===
 # # Goluskin 2015
 # problem.add_equation('Tz(z=0) = -F')
 # problem.add_equation('Tz(z=Lz) = -F')
@@ -289,55 +300,55 @@ else:
 # problem.add_equation('Temp(z=Lz) = 0')
 
 #! === Internally Heated ===
-#* === IH1 (T=0) ===
+# * === IH1 (T=0) ===
 # # T=0 at top and bottom (Goluskin & van der Poel 2016)
 # problem.add_equation('Temp(z=0) = 0')
 # problem.add_equation('Temp(z=Lz) = 0')
 
-#* === IH2 ===
+# * === IH2 ===
 # # Insulating bottom, fixed flux top
 # problem.add_equation('Tz(z=0) = 0')
 # problem.add_equation('Tz(z=Lz) = -F')
-if args['--currie'] or args['--kazemi']:
-    if args['--ff']:
+if args["--currie"] or args["--kazemi"]:
+    if args["--ff"]:
         # Insulating Top and Bottom
-        problem.add_equation('Tz(z=0) = 0')
-        problem.add_equation('Tz(z=Lz) = 0')
+        problem.add_equation("Tz(z=0) = 0")
+        problem.add_equation("Tz(z=Lz) = 0")
     else:
-        #* === IH3 ===
+        # * === IH3 ===
         # # Kazemi et al. 2022
         # # Insulating bottom, T=0 top
-        problem.add_equation('Tz(z=0) = 0')
-        problem.add_equation('Temp(z=Lz) = 0')
+        problem.add_equation("Tz(z=0) = 0")
+        problem.add_equation("Temp(z=Lz) = 0")
 else:
-    if args['--ff']:
-        problem.add_equation('Tz(z=0) = -F')
-        problem.add_equation('Tz(z=Lz) = 0')
+    if args["--ff"]:
+        problem.add_equation("Tz(z=0) = -F")
+        problem.add_equation("Tz(z=Lz) = 0")
     else:
-        problem.add_equation('Tz(z=0) = -F')
-        problem.add_equation('Temp(z=Lz) = 0')
-    
+        problem.add_equation("Tz(z=0) = -F")
+        problem.add_equation("Temp(z=Lz) = 0")
+
 #! === Other ===
-#* === Currie et al. 2020 ===
+# * === Currie et al. 2020 ===
 # # Fixed temp bottom, insulating top:
 # problem.add_equation("Temp(z=0) = 0")
 # problem.add_equation("Tz(z=Lz) = 0")
 
-#? === Velocity Boundary Conditions ===
-#* === Stress-Free ===
+# ? === Velocity Boundary Conditions ===
+# * === Stress-Free ===
 # d(ux)/dz|(z=0, D) = 0
-if args['--no-slip']:
-    #* === No-Slip  ===
+if args["--no-slip"]:
+    # * === No-Slip  ===
     problem.add_equation("u(z=0) = 0")
     problem.add_equation("u(z=Lz) = 0")
 else:
-    #* === Free-Slip ===
+    # * === Free-Slip ===
     problem.add_equation("dzu_y(z=0) = 0")
     problem.add_equation("dzu_y(z=Lz) = 0")
     problem.add_equation("dzu_x(z=0) = 0")
     problem.add_equation("dzu_x(z=Lz) = 0")
-    problem.add_equation('u_z(z=0) = 0')
-    problem.add_equation('u_z(z=Lz) = 0')
+    problem.add_equation("u_z(z=0) = 0")
+    problem.add_equation("u_z(z=Lz) = 0")
 
 # Pressure gauge fixing
 problem.add_equation("integ(p) = 0")
@@ -349,7 +360,7 @@ logger.info("Solver built")
 # ====================
 # INITIAL CONDITIONS
 # ====================
-if args['--input']:
+if args["--input"]:
     if pathlib.Path(restart_path + "snapshots/").exists():
         restart_file = sorted(glob(restart_path + "snapshots/*.h5"))[-1]
         write, last_dt = solver.load_state(restart_file, -1)
@@ -370,7 +381,7 @@ else:
     dt = max_timestep
     fh_mode = "overwrite"
 
-if not args['--test']:
+if not args["--test"]:
     os.makedirs(outpath + "run_params/", exist_ok=True)
     run_params = {
         "Ly": Ly,
@@ -388,10 +399,10 @@ if not args['--test']:
         "scalar_iter": scalar_iter,
     }
     run_params = json.dumps(run_params, indent=4)
-    
+
     with open(outpath + "run_params/runparams.json", "w") as run_file:
         run_file.write(run_params)
-    
+
     # ====================
     #   2.5D DATA FIELD
     # ====================
@@ -413,10 +424,16 @@ if not args['--test']:
         mode=fh_mode,
         parallel=parallel,
     )
-    horiz_aves.add_task(d3.Integrate(d3.Integrate(Temp, 'x'), 'y') / Ly, name='<T>', layout='g')
-    horiz_aves.add_task(d3.Integrate(d3.Integrate(f_cond, 'x'), 'y') / Ly, name='<F_cond>', layout='g')
-    horiz_aves.add_task(d3.Integrate(d3.Integrate(f_conv, 'x'), 'y') / Ly, name='<F_conv>', layout='g')    
-    
+    horiz_aves.add_task(
+        d3.Integrate(d3.Integrate(Temp, "x"), "y") / Ly, name="<T>", layout="g"
+    )
+    horiz_aves.add_task(
+        d3.Integrate(d3.Integrate(f_cond, "x"), "y") / Ly, name="<F_cond>", layout="g"
+    )
+    horiz_aves.add_task(
+        d3.Integrate(d3.Integrate(f_conv, "x"), "y") / Ly, name="<F_conv>", layout="g"
+    )
+
     # ==================
     #      SCALARS
     # ==================
@@ -427,12 +444,33 @@ if not args['--test']:
         mode=fh_mode,
         parallel=parallel,
     )
-    scalars.add_task(d3.Integrate( d3.Integrate( d3.Integrate( 0.5*u@u , 'y'), 'z'), 'x') / (Lz*Ly), name='KE', layout='g')
-    scalars.add_task(d3.Integrate( d3.Integrate( d3.Integrate( np.sqrt(u @ u), 'x'), 'y'), 'z') / (Lz*Ly), name='Re', layout='g')
-    scalars.add_task(d3.Integrate( d3.Integrate( Temp(z=0), 'y'), 'x') / Ly, name='<T(0)>', layout='g')
-    scalars.add_task(d3.Integrate( d3.Integrate( d3.Integrate(Temp, 'x'), 'y'), 'z') / (Ly*Lz), name='<<T>>', layout='g')    
-    scalars.add_task(d3.Integrate( d3.Integrate( d3.Integrate(f_cond + f_conv, 'x'), 'y'), 'z') / (Ly*Lz), name='F_tot', layout='g')    
-    
+    scalars.add_task(
+        d3.Integrate(d3.Integrate(d3.Integrate(0.5 * u @ u, "y"), "z"), "x")
+        / (Lz * Ly),
+        name="KE",
+        layout="g",
+    )
+    scalars.add_task(
+        d3.Integrate(d3.Integrate(d3.Integrate(np.sqrt(u @ u), "x"), "y"), "z")
+        / (Lz * Ly),
+        name="Re",
+        layout="g",
+    )
+    scalars.add_task(
+        d3.Integrate(d3.Integrate(Temp(z=0), "y"), "x") / Ly, name="<T(0)>", layout="g"
+    )
+    scalars.add_task(
+        d3.Integrate(d3.Integrate(d3.Integrate(Temp, "x"), "y"), "z") / (Ly * Lz),
+        name="<<T>>",
+        layout="g",
+    )
+    scalars.add_task(
+        d3.Integrate(d3.Integrate(d3.Integrate(f_cond + f_conv, "x"), "y"), "z")
+        / (Ly * Lz),
+        name="F_tot",
+        layout="g",
+    )
+
     # analysis = solver.evaluator.add_file_handler(
     #     outpath + "analysis",
     #     iter=analysis_iter,
@@ -466,7 +504,7 @@ CFL = d3.CFL(
 CFL.add_velocity(u)
 flow = d3.GlobalFlowProperty(solver, cadence=10)
 flow.add_property(np.sqrt(u @ u), name="Re")
-if args['--kill']:
+if args["--kill"]:
     exit(-99)
 try:
     logger.info("Starting main loop")
@@ -500,6 +538,10 @@ finally:
     snap_writes = (total_iterations) // snapshot_iter
     horiz_writes = (total_iterations) // horiz_iter
     scalar_writes = (total_iterations) // scalar_iter
-    logger.info("Snaps = {}, Horiz = {}, Scalars = {}".format(snap_writes, horiz_writes, scalar_writes))
+    logger.info(
+        "Snaps = {}, Horiz = {}, Scalars = {}".format(
+            snap_writes, horiz_writes, scalar_writes
+        )
+    )
     logger.info("Written to {}".format(outpath))
     exit(exit_code)
