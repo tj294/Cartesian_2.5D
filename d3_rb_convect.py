@@ -12,22 +12,25 @@ Options:
     --Pr=<Pr>                       # Prandtl number [default: 1]
     --Ta=<Ta>                       # Taylor number
     --theta=<theta>                 # co-latitude of box to rotation vector [default: 45]
+    --Ly=<Ly>                       # Aspect Ratio of the box
     --Ny=<Ny>                       # Horizontal resolution
     --Nz=<Nz>                       # Vertical resolution
     --tau=<tau>                     # timescale [default: viscous]
     --maxdt=<maxdt>                 # Maximum timestep [default: 1e-5]
     --stop=<stop>                   # Simulation stop time
-    --snaps=<snaps>                 # Snapshot interval [default: 500]
-    --horiz=<horiz>                 # Horizontal analysis interval [default: 100]
-    --scalar=<scalar>               # Scalar analysis interval [default: 1]
-    -t --test                       # Do not save any output
-    -m=<mesh>, --mesh=<mesh>        # Processor Mesh
     --currie                        # Run with Currie 2020 heating function
     --kazemi                        # Run with Kazemi 2022 heating function
     --ff                            # Use fixed-flux boundary conditions
-    --no-slip                       # Use no-slip boundary conditions
+    --slip=SLIP                     # Boundary conditions No/Free [default: free]
+    --top=TOP                       # Top boundary condition [default: insulating]
+    --bottom=BOTTOM                 # Bottom boundary condition [default: insulating]
+    --snaps=<snaps>                 # Snapshot interval [default: 500]
+    --horiz=<horiz>                 # Horizontal analysis interval [default: 100]
+    --scalar=<scalar>               # Scalar analysis interval [default: 1]
     -o OUT_PATH, --output OUT_PATH  # output file [default= ../DATA/output/]
     -i IN_PATH, --input IN_PATH     # path to read in initial conditions from
+    -m=<mesh>, --mesh=<mesh>        # Processor Mesh
+    -t --test                       # Do not save any output
     -k, --kill                      # Kills the program after building the solver.
     -f, --function                  # Plots the heating function
 """
@@ -81,7 +84,8 @@ if not (args["--test"]):
 if args["--input"]:
     restart_path = os.path.normpath(args["--input"]) + "/"
 
-Ly, Lz = rp.Ly, rp.Lz
+Ly = argcheck(args["--Ly"], rp.Ly)
+Lz = rp.Lz
 if args["--Nz"]:
     Nz = int(args["--Nz"])
     if args["--Ny"]:
@@ -113,7 +117,7 @@ elif args["--currie"]:
     heat_type = "Currie"
 else:
     heat_type = None
-if args["--no-slip"]:
+if args["--slip"] == "no":
     slip_type = "No Slip"
 else:
     slip_type = "Free Slip"
@@ -309,24 +313,53 @@ else:
 # # Insulating bottom, fixed flux top
 # problem.add_equation('Tz(z=0) = 0')
 # problem.add_equation('Tz(z=Lz) = -F')
-if args["--currie"] or args["--kazemi"]:
-    if args["--ff"]:
-        # Insulating Top and Bottom
-        problem.add_equation("Tz(z=0) = 0")
-        problem.add_equation("Tz(z=Lz) = 0")
-    else:
-        # * === IH3 ===
-        # # Kazemi et al. 2022
-        # # Insulating bottom, T=0 top
-        problem.add_equation("Tz(z=0) = 0")
-        problem.add_equation("Temp(z=Lz) = 0")
+# if args["--currie"] or args["--kazemi"]:
+#     if args["--ff"]:
+#         # Insulating Top and Bottom
+#         problem.add_equation("Tz(z=0) = 0")
+#         problem.add_equation("Tz(z=Lz) = 0")
+#     else:
+#         # * === IH3 ===
+#         # # Kazemi et al. 2022
+#         # # Insulating bottom, T=0 top
+#         problem.add_equation("Tz(z=0) = 0")
+#         problem.add_equation("Temp(z=Lz) = 0")
+# else:
+#     if args["--ff"]:
+#         problem.add_equation("Tz(z=0) = -F")
+#         problem.add_equation("Tz(z=Lz) = 0")
+#     else:
+#         problem.add_equation("Tz(z=0) = -F")
+#         problem.add_equation("Temp(z=Lz) = 0")
+
+if args["--top"] == "insulating":
+    problem.add_equation("Tz(z=Lz) = 0")
+    boundary_conditions = "Insulating top"
+elif args["--top"] == "vanishing":
+    problem.add_equation("Temp(z=Lz) = 0")
+    boundary_conditions = "Vanishing top"
+elif args["--top"] == "fixed_flux":
+    problem.add_equation("Tz(z=Lz) = -F")
+    boundary_conditions = "Fixed Flux top"
 else:
-    if args["--ff"]:
-        problem.add_equation("Tz(z=0) = -F")
-        problem.add_equation("Tz(z=Lz) = 0")
-    else:
-        problem.add_equation("Tz(z=0) = -F")
-        problem.add_equation("Temp(z=Lz) = 0")
+    raise ValueError(
+        f"Invalid top boundary condition {args['--top']}, must be 'insulating', 'vanishing' or 'fixed_flux'"
+    )
+
+if args["--bottom"] == "insulating":
+    problem.add_equation("Tz(z=0) = 0")
+    boundary_conditions += "; Insulating bottom"
+elif args["--bottom"] == "vanishing":
+    problem.add_equation("Tempk(z=0) = 0")
+    boundary_conditions += "; Vanishing bottom"
+elif args["--bottom"] == "fixed_flux":
+    problem.add_equation("Tz(z=0) = -F")
+    boundary_conditions += "; Fixed flux bottom"
+else:
+    raise ValueError(
+        f'Invalid bottom boundary condition {args["--bottom"]}, must be "insulating", "vanishing" or "fixed_flux"'
+    )
+
 
 #! === Other ===
 # * === Currie et al. 2020 ===
@@ -337,11 +370,12 @@ else:
 # ? === Velocity Boundary Conditions ===
 # * === Stress-Free ===
 # d(ux)/dz|(z=0, D) = 0
-if args["--no-slip"]:
+if args["--slip"] == "no":
     # * === No-Slip  ===
     problem.add_equation("u(z=0) = 0")
     problem.add_equation("u(z=Lz) = 0")
-else:
+    boundary_conditions += "; No-slip"
+elif args["--slip"] == "free":
     # * === Free-Slip ===
     problem.add_equation("dzu_y(z=0) = 0")
     problem.add_equation("dzu_y(z=Lz) = 0")
@@ -349,10 +383,16 @@ else:
     problem.add_equation("dzu_x(z=Lz) = 0")
     problem.add_equation("u_z(z=0) = 0")
     problem.add_equation("u_z(z=Lz) = 0")
+    boundary_conditions += "; Free-Slip"
+else:
+    raise ValueError(
+        f"invalid slip condition {args['--slip']}, must be 'no' or 'free'."
+    )
 
 # Pressure gauge fixing
 problem.add_equation("integ(p) = 0")
 
+logger.info("Boundary conditions: {}".format(boundary_conditions))
 
 solver = problem.build_solver(timestepper)
 logger.info("Solver built")
@@ -532,7 +572,7 @@ finally:
     # if not args.test:
     #     # logger.info("Merging outputs...")
     #     # combine_outputs.merge_files(outpath)
-    solver.evaluate_handlers_now(timestep)
+    solver.evaluate_handlers(timestep)
     solver.log_stats()
     total_iterations = solver.iteration - first_iter
     snap_writes = (total_iterations) // snapshot_iter
