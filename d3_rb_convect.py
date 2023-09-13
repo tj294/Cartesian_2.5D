@@ -572,7 +572,7 @@ finally:
     # if not args.test:
     #     # logger.info("Merging outputs...")
     #     # combine_outputs.merge_files(outpath)
-    solver.evaluate_handlers(timestep)
+    solver.evaluate_handlers_now(timestep)
     solver.log_stats()
     total_iterations = solver.iteration - first_iter
     snap_writes = (total_iterations) // snapshot_iter
