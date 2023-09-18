@@ -83,6 +83,7 @@ if not (args["--test"]):
 
 if args["--input"]:
     restart_path = os.path.normpath(args["--input"]) + "/"
+    logger.info("Reading from {}".format(restart_path))
 
 Ly = argcheck(args["--Ly"], rp.Ly)
 Lz = rp.Lz
@@ -408,7 +409,11 @@ if args["--input"]:
         first_iter = solver.iteration
         fh_mode = "append"
     else:
-        print("{} does not exist.".format(restart_path + "snapshots_s1.h5"))
+        logger.error(
+            "Problem reading file.\n{} does not exist.".format(
+                restart_path + "snapshots_s1.h5"
+            )
+        )
         exit(-10)
 else:
     Temp.fill_random("g", seed=42, distribution="normal", scale=1e-5)
