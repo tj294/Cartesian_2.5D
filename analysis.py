@@ -66,6 +66,7 @@ print("====== Data Read-In ======")
 if args["--info"] or args["--time-tracks"]:
     scalar_files = glob(direc + "scalars/scalars_s*.h5")
     scalar_files.sort(key=lambda f: int(re.sub("\D", "", f)))
+    print(scalar_files)
     for i, sc_file in enumerate(scalar_files):
         if i == 0:
             with h5.File(sc_file, "r") as file:
@@ -85,7 +86,7 @@ if args["--info"] or args["--time-tracks"]:
                     KE = np.concatenate(
                         (KE, np.array(file["tasks"]["KE"])[:, 0, 0, 0]), axis=0
                     )
-
+    print(sc_time)
 if args["--flux-balance"] or args["--depth-profile"]:
     horiz_files = glob(direc + "horiz_aves/horiz_aves_s*.h5")
     horiz_files.sort(
@@ -181,6 +182,7 @@ if args["--time-tracks"]:
     AEI = get_index(sc_time, float(1.9))
     AEI = None
     # skip_cadence = 1
+
     KE_run_ave = rolling_average(KE[::skip_cadence], sc_time[::skip_cadence])
     Nu = 1 / deltaT
     Nu_run_ave = rolling_average(Nu[::skip_cadence], sc_time[::skip_cadence])
