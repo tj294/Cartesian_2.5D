@@ -571,13 +571,13 @@ try:
                 "Iteration=%i,\n\tTime=%e, dt=%e, max(Re)=%f"
                 % (solver.iteration - first_iter, solver.sim_time, timestep, max_Re)
             )
-        if np.isnan(max_Re):
+        if np.isnan(max_Re) or np.isinf(max_Re):
             raise NaNFlowError
 except KeyboardInterrupt:
     logger.error("User quit loop. Triggering end of main loop")
     exit_code = -1
 except NaNFlowError:
-    logger.error("Max Re is NaN. Triggering end of loop")
+    logger.error("Max Re is NaN or inf. Triggering end of loop")
     exit_code = -50
 except:
     logger.error("Unknown error raised. Triggering end of loop")
