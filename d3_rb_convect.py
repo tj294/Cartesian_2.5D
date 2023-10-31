@@ -267,20 +267,29 @@ if args["--function"]:
 problem = d3.IVP(
     [u, p, Temp, tau_u1, tau_u2, tau_T3, tau_T4, tau_p], time="t", namespace=locals()
 )
-problem.add_equation("trace(g_operator) + tau_p= 0")  # needs a gauge fixing term
+# Thermal diffusion time
 if args["--tau"] == "thermal":
+    # Mass Conservation
+    problem.add_equation("trace(g_operator) + tau_p= 0")  # needs a gauge fixing term
+    # Momentum Equation
+    problem.add_equation(
+        "dt(u) - Pr * (div(g_operator)) + grad(p) - (Ra * Pr)*Temp*z_hat + lift(tau_u2) = - u@g_operator - (Tah / Pr) * cross(omega, u)"
+    )
+    # Temp Evolution
+    problem.add_equation(
+        "dt(Temp) + lift(tau_T4) -  (div(h_operator)) = -(u@h_operator) + heat"
+    )
+# Viscous diffusion time
+elif args["--tau"] == "viscous":
+    # Mass Conservation
+    problem.add_equation("trace(g_operator) + tau_p= 0")  # needs a gauge fixing term
+    # Momentum Equation
     problem.add_equation(
         "dt(u) - (div(g_operator)) + grad(p) - (Ra / Pr)*Temp*z_hat + lift(tau_u2) = - u@g_operator - Tah*cross(omega, u)"
     )
+    # Temp Evolution
     problem.add_equation(
-        "dt(Temp) + lift(tau_T4) - (1/Pr) * (div(h_operator)) = -(u@h_operator) + heat"
-    )
-elif args["--tau"] == "viscous":
-    problem.add_equation(
-        "dt(u) - (div(g_operator)) + grad(p) - (Ra * Pr)*Temp*z_hat + lift(tau_u2) = - u@g_operator - Tah*cross(omega, u)"
-    )
-    problem.add_equation(
-        "dt(Temp) + lift(tau_T4) - (div(h_operator)) = -(u@h_operator) + heat"
+        "dt(Temp) + lift(tau_T4) - (1 / Pr) * (div(h_operator)) = -(u@h_operator) + (1 / Pr) * heat"
     )
 else:
     raise ValueError(
