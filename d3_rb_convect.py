@@ -360,7 +360,7 @@ if args["--bottom"] == "insulating":
     problem.add_equation("Tz(z=0) = 0")
     boundary_conditions += "; Insulating bottom"
 elif args["--bottom"] == "vanishing":
-    problem.add_equation("Tempk(z=0) = 0")
+    problem.add_equation("Temp(z=0) = 0")
     boundary_conditions += "; Vanishing bottom"
 elif args["--bottom"] == "fixed_flux":
     problem.add_equation("Tz(z=0) = -F")
