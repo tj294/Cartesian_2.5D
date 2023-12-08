@@ -72,6 +72,7 @@ if args["--info"] or args["--time-tracks"]:
             with h5.File(sc_file, "r") as file:
                 sc_time = np.array(file["scales"]["sim_time"])
                 deltaT = np.array(file["tasks"]["<T(0)>"])[:, 0, 0, 0]
+                Re = np.array(file["tasks"]["Re"])[:, 0, 0, 0]
                 if args["--time-tracks"]:
                     KE = np.array(file["tasks"]["KE"])[:, 0, 0, 0]
         else:
@@ -81,6 +82,9 @@ if args["--info"] or args["--time-tracks"]:
                 )
                 deltaT = np.concatenate(
                     (deltaT, np.array(file["tasks"]["<T(0)>"])[:, 0, 0, 0]), axis=0
+                )
+                Re = np.concatenate(
+                    (Re, np.array(file["tasks"]["Re"])[:, 0, 0, 0]), axis=0
                 )
                 if args["--time-tracks"]:
                     KE = np.concatenate(
@@ -155,8 +159,10 @@ if args["--info"]:
     AEI = get_index(sc_time, float(2.0))
     AEI = None
     dT = np.nanmean(deltaT[ASI:AEI], axis=0)
+    Re_ave = np.nanmean(Re[ASI:AEI], axis=0)
 
     print(f"\t ΔT = {dT:.3f}\n" + f"\t 1/ΔT = {1/dT:.3f}")
+    print(f"\t Re = {Re_ave:.3f}")
 
     with open(direc + "run_params/runparams.json", "r") as file:
         run_params = json.load(file)
@@ -186,10 +192,22 @@ if args["--time-tracks"]:
     KE_run_ave = rolling_average(KE[::skip_cadence], sc_time[::skip_cadence])
     Nu = 1 / deltaT
     Nu_run_ave = rolling_average(Nu[::skip_cadence], sc_time[::skip_cadence])
+    Re_run_ave = rolling_average(Re[::skip_cadence], sc_time[::skip_cadence])
     fig, [KE_ax, Nu_ax] = plt.subplots(2, 1, figsize=(6, 6), sharex=True)
     KE_ax.plot(
         sc_time[:AEI:skip_cadence], KE_run_ave[:AEI], label="Kinetic Energy", c="r"
     )
+
+    RE_ax = KE_ax.twinx()
+    RE_ax.scatter(sc_time[:AEI:skip_cadence], Re[:AEI:skip_cadence], marker='+', c="cyan", alpha=0.5)
+    RE_ax.plot(
+        sc_time[:AEI:skip_cadence], Re_run_ave[:AEI], label="Reynolds Number", c="b"
+    )
+    # RE_ax.set_ylabel("Re")
+    RE_ax.set_ylabel("Re", color="blue")
+    RE_ax.tick_params(axis='y', labelcolor="blue")
+
+    
     ylims = KE_ax.get_ylim()
     KE_ax.scatter(sc_time[:AEI:skip_cadence], KE[:AEI:skip_cadence], marker="+", c="k")
     KE_ax.set_ylim(ylims)
