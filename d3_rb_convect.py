@@ -13,6 +13,7 @@ Options:
     --Ta=<Ta>                       # Taylor number [default: 1e-1]
     --theta=<theta>                 # co-latitude of box to rotation vector [default: 5]
     --Ly=<Ly>                       # Aspect Ratio of the box [default: 4]
+    --Lz=<Lz>                       # Depth of the box [default: 1]
     --Ny=<Ny>                       # Horizontal resolution [default: 128]
     --Nz=<Nz>                       # Vertical resolution [default: 256]
     --tau=<tau>                     # timescale [default: viscous]
