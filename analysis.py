@@ -90,7 +90,7 @@ if args["--info"] or args["--time-tracks"]:
                     KE = np.concatenate(
                         (KE, np.array(file["tasks"]["KE"])[:, 0, 0, 0]), axis=0
                     )
-    print(sc_time)
+    # print(sc_time)
 if args["--flux-balance"] or args["--depth-profile"]:
     horiz_files = glob(direc + "horiz_aves/horiz_aves_s*.h5")
     horiz_files.sort(
