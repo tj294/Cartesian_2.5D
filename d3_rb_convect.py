@@ -10,16 +10,17 @@ Usage:
 Options:
     --Ra=<Ra>                       # Rayleigh number
     --Pr=<Pr>                       # Prandtl number [default: 1]
-    --Ta=<Ta>                       # Taylor number
-    --theta=<theta>                 # co-latitude of box to rotation vector [default: 45]
-    --Ly=<Ly>                       # Aspect Ratio of the box
-    --Ny=<Ny>                       # Horizontal resolution
-    --Nz=<Nz>                       # Vertical resolution
+    --Ta=<Ta>                       # Taylor number [default: 1e-1]
+    --theta=<theta>                 # co-latitude of box to rotation vector [default: 5]
+    --Ly=<Ly>                       # Aspect Ratio of the box [default: 4]
+    --Ny=<Ny>                       # Horizontal resolution [default: 128]
+    --Nz=<Nz>                       # Vertical resolution [default: 256]
     --tau=<tau>                     # timescale [default: viscous]
     --maxdt=<maxdt>                 # Maximum timestep [default: 1e-5]
-    --stop=<stop>                   # Simulation stop time
+    --stop=<stop>                   # Simulation stop time [default: 1.0]
     --currie                        # Run with Currie 2020 heating function
     --kazemi                        # Run with Kazemi 2022 heating function
+    --Hwidth=<Hwidth>               # Width of heating zone [default: 0.2]
     --ff                            # Use fixed-flux boundary conditions
     --slip=SLIP                     # Boundary conditions No/Free [default: free]
     --top=TOP                       # Top boundary condition [default: insulating]
@@ -46,7 +47,7 @@ from mpi4py import MPI
 
 ncpu = MPI.COMM_WORLD.size
 
-import rb_params as rp
+# import rb_params as rp
 
 logger = logging.getLogger(__name__)
 
@@ -85,8 +86,8 @@ if args["--input"]:
     restart_path = os.path.normpath(args["--input"]) + "/"
     logger.info("Reading from {}".format(restart_path))
 
-Ly = argcheck(args["--Ly"], rp.Ly)
-Lz = rp.Lz
+Ly = float(args["--Ly"])
+Lz = float(args["--Lz"])
 if args["--Nz"]:
     Nz = int(args["--Nz"])
     if args["--Ny"]:
@@ -100,17 +101,21 @@ else:
         Ny = inparams["Ny"]
         Nz = inparams["Nz"]
     else:
-        Ny, Nz = rp.Ny, rp.Nz
+        Ny = int(args["--Ny"])
+        Nz = int(args["--Nz"])
 
-Ra = argcheck(args["--Ra"], rp.Ra)
-Pr = argcheck(args["--Pr"], rp.Pr)
-Ta = argcheck(args["--Ta"], rp.Ta)
+try:
+    Ra = float(args["--Ra"])
+except ValueError:
+    print("Must provide a valid Ra value")
+Pr = float(args["--Pr"])
+Ta = float(args["--Ta"])
 
 logger.info(f"Ro_c = {np.sqrt(Ra / (Pr * Ta)):1.2e}")
 
-snapshot_iter = argcheck(args["--snaps"], rp.snapshot_iter, type=int)
-horiz_iter = argcheck(args["--horiz"], rp.horiz_iter, type=int)
-scalar_iter = argcheck(args["--scalar"], rp.scalar_iter, type=int)
+snapshot_iter = int(args["--snaps"])
+horiz_iter = int(args["--horiz"])
+scalar_iter = int(args["--scalar"])
 
 if args["--kazemi"]:
     heat_type = "Kazemi"
@@ -133,15 +138,15 @@ parallel = None
 # ====================
 # SET UP PROBLEM
 # ====================
-dealias = rp.dealias
+dealias = 3/2
 dtype = np.float64
-timestepper = rp.timestepper
+timestepper = d3.RK443
 
-stop_sim_time = argcheck(args["--stop"], rp.stop_sim_time, type=float)
-stop_wall_time = rp.stop_wall_time
-stop_iteration = rp.end_iteration
+stop_sim_time = float(args["--stop"])
+stop_wall_time = np.inf
+stop_iteration = np.inf
 
-max_timestep = argcheck(args["--maxdt"], rp.max_timestep, type=float)
+max_timestep = float(args["--maxdt"])
 logger.info(f"max_timestep = {max_timestep}")
 
 # ===Initialise basis===
@@ -190,11 +195,11 @@ f_cond = -d3.Differentiate(Temp, coords["z"])
 f_conv = u_z * Temp
 g_operator = d3.grad(u) - z_hat * lift(tau_u1)
 h_operator = d3.grad(Temp) - z_hat * lift(tau_T3)
-F = rp.F
+F = 1
 
 # Add coriolis term
 Tah = np.sqrt(Ta)
-theta_deg = argcheck(args["--theta"], rp.theta, type=float)
+theta_deg = float(args["--theta"])
 theta = theta_deg * np.pi / 180
 # rotation vector
 omega = dist.VectorField(coords, name="omega", bases=all_bases)
@@ -207,9 +212,11 @@ omega["g"][2] = np.cos(theta)
 # #? =================
 # Following Currie et al. 2020 Set-up B
 # Width of middle 'convection zone' with no heating/cooling
-H = rp.convection_height
+heating_width = float(args["--Hwidth"])
+
+H = Lz / (1 + 2 * heating_width)
 # Width of heating and cooling layers
-Delta = rp.heating_width * H
+Delta = heating_width * H
 
 heat = dist.Field(bases=zbasis)
 if args["--currie"]:
@@ -542,7 +549,7 @@ if not args["--test"]:
 
 solver.stop_sim_time = stop_sim_time
 solver.stop_wall_time = stop_wall_time
-solver.stop_iteration = first_iter + rp.end_iteration + 1
+solver.stop_iteration = first_iter + stop_iteration + 1
 solver.warmup_iterations = solver.iteration + 2000
 
 CFL = d3.CFL(
