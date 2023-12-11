@@ -22,6 +22,7 @@ Options:
 from docopt import docopt
 import h5py as h5
 import numpy as np
+from scipy.integrate import cumtrapz
 import re
 import time as timer
 import matplotlib.pyplot as plt
@@ -48,6 +49,40 @@ def rolling_average(quantity, time, window=0.1):
 
 def get_index(time, start_time):
     return np.abs(time - start_time).argmin()
+
+def get_heat_func(heat):
+    try:
+        with open(direc + "snapshots/snapshots_s1.h5", "r") as file:
+            heat_func = np.array(file["tasks"]["heat"])
+        return heat_func
+    except:
+        if heat == "exp":
+            l = 0.1
+            beta = 1
+            a = 1 / (0.1 * (1 - np.exp(-1 / l)))
+            heating = lambda z: a * np.exp(-z / l) - beta
+            heat_func = heating(z)
+        elif heat == "cos":
+            Lz = 4
+            F = 1
+            heating_width = 0.2
+            H = Lz / (1 + 2 * heating_width)
+            # Width of heating and cooling layers
+            Delta = heating_width * H
+            heat_func = lambda z: (F / Delta) * (
+                1 + np.cos((2 * np.pi * (z - (Delta / 2))) / Delta)
+            )
+            cool_func = lambda z: (F / Delta) * (
+                -1 - np.cos((2 * np.pi * (z - Lz + (Delta / 2))) / Delta)
+            )
+
+            heat_func = np.piecewise(
+                z, [z <= Delta, z >= Lz - Delta], [heat_func, cool_func, 0]
+            )
+        else:
+            raise ValueError(f"Invalid heat function {heat}")
+        
+        return heat_func
 
 
 args = docopt(__doc__, version="2.0")
@@ -235,15 +270,26 @@ if args["--flux-balance"]:
     #         driving_flux = params['F']
     ASI = get_index(horiz_time, float(args["--ASI"]))
     # AEI = get_index(horiz_time, float(2.0))
+    with open(direc + "run_params/runparams.json", "r") as file:
+        params = json.load(file)
+        Ly = params['Ly']
+
     AEI = None
     f_tot = F_cond + F_conv
     F_cond_bar = np.nanmean(F_cond[ASI:AEI], axis=0)
     F_conv_bar = np.nanmean(F_conv[ASI:AEI], axis=0)
     F_tot_bar = np.nanmean(f_tot[ASI:AEI], axis=0)
 
+    heat_func = get_heat_func("exp")
+    F_imp = Ly * cumtrapz(heat_func, z, initial=0)
+    discrepency = np.mean(np.abs(F_imp - F_tot_bar))
+    print(f"F_imp - F_tot discrepency = {discrepency:.3f}")
+    # F_imp *= scaling
+
     fig, ax = plt.subplots(1, 1, figsize=(6, 4))
     ax.plot(F_cond_bar, z, label=r"$F_{cond}$", c="b")
     ax.plot(F_conv_bar, z, label=r"$F_{conv}$", c="r")
+    ax.plot(F_imp, z, label=r"$F_{imp}$", c="g")
     ax.plot(F_tot_bar, z, label=r"$F_{tot}$", c="k")
     ax.set_xlabel("Flux")
     ax.set_ylabel("z")
