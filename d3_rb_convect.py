@@ -476,6 +476,7 @@ if not args["--test"]:
         parallel=parallel,
     )
     snapshots.add_tasks(solver.state, layout="g")
+    snapshots.add_tasks(heat, layout="g")
     # ==================
     #   HORIZONTAL AVE
     # ==================
