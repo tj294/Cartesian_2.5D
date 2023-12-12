@@ -52,10 +52,12 @@ def get_index(time, start_time):
 
 def get_heat_func(heat):
     try:
-        with open(direc + "snapshots/snapshots_s1.h5", "r") as file:
-            heat_func = np.array(file["tasks"]["heat"])
+        with h5.File(direc + "snapshots/snapshots_s1.h5", "r") as file:
+            heat_func = np.array(file["tasks"]["g"])[0, 0, 0, :]
+        print("Using heat function from snapshots")
         return heat_func
     except:
+        print("Writing heat function")
         if heat == "exp":
             l = 0.1
             beta = 1
@@ -290,7 +292,7 @@ if args["--flux-balance"]:
     ax.plot(F_cond_bar, z, label=r"$F_{cond}$", c="b")
     ax.plot(F_conv_bar, z, label=r"$F_{conv}$", c="r")
     ax.plot(F_imp, z, label=r"$F_{imp}$", c="g")
-    ax.plot(F_tot_bar, z, label=r"$F_{tot}$", c="k")
+    ax.plot(F_tot_bar, z, label=r"$F_{tot}$", c="k", ls='--')
     ax.set_xlabel("Flux")
     ax.set_ylabel("z")
     plt.legend(loc="best")
