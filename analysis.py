@@ -50,6 +50,7 @@ def rolling_average(quantity, time, window=0.1):
 def get_index(time, start_time):
     return np.abs(time - start_time).argmin()
 
+
 def get_heat_func(heat):
     try:
         with h5.File(direc + "snapshots/snapshots_s1.h5", "r") as file:
@@ -83,7 +84,7 @@ def get_heat_func(heat):
             )
         else:
             raise ValueError(f"Invalid heat function {heat}")
-        
+
         return heat_func
 
 
@@ -110,6 +111,13 @@ if args["--info"] or args["--time-tracks"]:
                 sc_time = np.array(file["scales"]["sim_time"])
                 deltaT = np.array(file["tasks"]["<T(0)>"])[:, 0, 0, 0]
                 Re = np.array(file["tasks"]["Re"])[:, 0, 0, 0]
+                try:
+                    Nu_bulk = np.array(file["tasks"]["Nu_bulk"])[:, 0, 0, 0]
+                    Nu_domain = np.array(file["tasks"]["Nu_domain"])[:, 0, 0, 0]
+                    Nu_loaded = True
+                except:
+                    Nu_loaded = False
+                    pass
                 if args["--time-tracks"]:
                     KE = np.array(file["tasks"]["KE"])[:, 0, 0, 0]
         else:
@@ -123,6 +131,15 @@ if args["--info"] or args["--time-tracks"]:
                 Re = np.concatenate(
                     (Re, np.array(file["tasks"]["Re"])[:, 0, 0, 0]), axis=0
                 )
+                if Nu_loaded:
+                    Nu_bulk = np.concatenate(
+                        (Nu_bulk, np.array(file["tasks"]["Nu_bulk"])[:, 0, 0, 0]),
+                        axis=0,
+                    )
+                    Nu_domain = np.concatenate(
+                        (Nu_domain, np.array(file["tasks"]["Nu_domain"])[:, 0, 0, 0]),
+                        axis=0,
+                    )
                 if args["--time-tracks"]:
                     KE = np.concatenate(
                         (KE, np.array(file["tasks"]["KE"])[:, 0, 0, 0]), axis=0
@@ -198,6 +215,12 @@ if args["--info"]:
     dT = np.nanmean(deltaT[ASI:AEI], axis=0)
     Re_ave = np.nanmean(Re[ASI:AEI], axis=0)
 
+    if Nu_loaded:
+        Nu_bulk_ave = np.nanmean(Nu_bulk[ASI:AEI], axis=0)
+        Nu_domain_ave = np.nanmean(Nu_domain[ASI:AEI], axis=0)
+        print(f"\t Bulk-Averaged Nusselt Number = {Nu_bulk_ave:.3f}")
+        print(f"\t Domain-Averaged Nusselt Number = {Nu_domain_ave:.3f}")
+
     print(f"\t ΔT = {dT:.3f}\n" + f"\t 1/ΔT = {1/dT:.3f}")
     print(f"\t Re = {Re_ave:.3f}")
 
@@ -236,15 +259,20 @@ if args["--time-tracks"]:
     )
 
     RE_ax = KE_ax.twinx()
-    RE_ax.scatter(sc_time[:AEI:skip_cadence], Re[:AEI:skip_cadence], marker='+', c="cyan", alpha=0.5)
+    RE_ax.scatter(
+        sc_time[:AEI:skip_cadence],
+        Re[:AEI:skip_cadence],
+        marker="+",
+        c="cyan",
+        alpha=0.5,
+    )
     RE_ax.plot(
         sc_time[:AEI:skip_cadence], Re_run_ave[:AEI], label="Reynolds Number", c="b"
     )
     # RE_ax.set_ylabel("Re")
     RE_ax.set_ylabel("Re", color="blue")
-    RE_ax.tick_params(axis='y', labelcolor="blue")
+    RE_ax.tick_params(axis="y", labelcolor="blue")
 
-    
     ylims = KE_ax.get_ylim()
     KE_ax.scatter(sc_time[:AEI:skip_cadence], KE[:AEI:skip_cadence], marker="+", c="k")
     KE_ax.set_ylim(ylims)
@@ -274,7 +302,11 @@ if args["--flux-balance"]:
     # AEI = get_index(horiz_time, float(2.0))
     with open(direc + "run_params/runparams.json", "r") as file:
         params = json.load(file)
-        Ly = params['Ly']
+        Ly = params["Ly"]
+    # Bulk Start Index
+    BSI = get_index(z, 1 / 3)
+    # Bulk End Index
+    BEI = get_index(z, 2 / 3)
 
     AEI = None
     f_tot = F_cond + F_conv
@@ -292,12 +324,34 @@ if args["--flux-balance"]:
     ax.plot(F_cond_bar, z, label=r"$F_{cond}$", c="b")
     ax.plot(F_conv_bar, z, label=r"$F_{conv}$", c="r")
     ax.plot(F_imp, z, label=r"$F_{imp}$", c="g")
-    ax.plot(F_tot_bar, z, label=r"$F_{tot}$", c="k", ls='--')
+    ax.plot(F_tot_bar, z, label=r"$F_{tot}$", c="k", ls="--")
+    # ax.axhline(z[BSI], color="grey", ls="--")
+    # ax.axhline(z[BEI], color="grey", ls="--")
     ax.set_xlabel("Flux")
     ax.set_ylabel("z")
     plt.legend(loc="best")
     plt.tight_layout()
     plt.savefig(outpath + "flux_balance.pdf")
+
+    # find mean of only the positive values of np.trapz(F_conv/F_cond)
+    flux_ratio = np.trapz(
+        F_conv[:, BSI:BEI] / F_cond[:, BSI:BEI], x=z[BSI:BEI], axis=1
+    )[ASI:AEI]
+    # flux_ratio = flux_ratio[flux_ratio > 0]
+    Nusselt = 1 + np.nanmean(flux_ratio, axis=0)
+
+    # Nusselt = 1 + np.nanmean(
+    #     np.trapz(F_conv[:, BSI:BEI] / F_cond[:, BSI:BEI], x=z[BSI:BEI], axis=1)[
+    #         ASI:AEI
+    #     ],
+    #     axis=0,
+    # )
+    print(f"1 + <F_conv/F_cond>_bulk = {Nusselt:.3f}")
+
+    flux_ratio = np.trapz(F_conv / F_cond, x=z, axis=1)[ASI:AEI]
+    # flux_ratio = flux_ratio[flux_ratio > 0]
+    Nusselt = 1 + np.nanmean(flux_ratio, axis=0)
+    print(f"1 + <F_conv/F_cond> = {Nusselt:.3f}")
 
     print(f"Done ({timer.time() - flux_start:.2f}s).")
 
@@ -381,7 +435,12 @@ if args["--gif"]:
             # print(f"{i+1}/{len(snap_time)}", end='\r')
             # cax = ax.contourf(yy, zz, temp[i, :, :], cmap='inferno', extend='min', levels=levels, norm=cNorm)
             cax = ax.contourf(
-                yy, zz, temp[i, :, :], cmap="inferno", extend="min", levels=999
+                yy,
+                zz,
+                temp[i, :, :],
+                cmap="inferno",
+                extend="min",
+                levels=999,
             )
             warnings.filterwarnings("ignore")
             ax.quiver(
