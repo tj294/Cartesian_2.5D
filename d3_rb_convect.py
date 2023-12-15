@@ -139,7 +139,7 @@ parallel = None
 # ====================
 # SET UP PROBLEM
 # ====================
-dealias = 3/2
+dealias = 3 / 2
 dtype = np.float64
 timestepper = d3.RK443
 
@@ -156,6 +156,9 @@ dist = d3.Distributor(coords, dtype=dtype)
 xbasis = d3.RealFourier(coords["x"], size=2, bounds=(0, Ly), dealias=dealias)
 ybasis = d3.RealFourier(coords["y"], size=Ny, bounds=(0, Ly), dealias=dealias)
 zbasis = d3.ChebyshevT(coords["z"], size=Nz, bounds=(0, Lz), dealias=dealias)
+# bulk_z = d3.ChebyshevT(
+#     coords["z"], size=Nz, bounds=(Lz / 3, 2 * Lz / 3), dealias=dealias
+# )
 x, y, z = dist.local_grids(xbasis, ybasis, zbasis)
 all_bases = (xbasis, ybasis, zbasis)
 hor_bases = (xbasis, ybasis)
@@ -168,6 +171,9 @@ p = dist.Field(name="p", bases=all_bases)
 # Temperature
 Temp = dist.Field(name="Temp", bases=all_bases)
 
+M = dist.Field(name="M", bases=zbasis)
+
+M["g"] = (np.heaviside(z - (Lz / 3), 0) - np.heaviside(z - (2 * Lz / 3), 0)) ** 3
 # Add Tau Terms
 # Velocity tau terms, tau_u1 = (tau_1, tau_2)
 tau_u1 = dist.VectorField(coords, name="tau_u1", bases=hor_bases)
@@ -476,7 +482,7 @@ if not args["--test"]:
         parallel=parallel,
     )
     snapshots.add_tasks(solver.state, layout="g")
-    snapshots.add_task(heat, name='heat', layout="g")
+    snapshots.add_task(heat, name="heat", layout="g")
     # ==================
     #   HORIZONTAL AVE
     # ==================
@@ -487,14 +493,12 @@ if not args["--test"]:
         mode=fh_mode,
         parallel=parallel,
     )
+    horiz_aves.add_task(d3.Integrate(Temp, ("x", "y")) / Ly, name="<T>", layout="g")
     horiz_aves.add_task(
-        d3.Integrate(d3.Integrate(Temp, "x"), "y") / Ly, name="<T>", layout="g"
+        d3.Integrate(f_cond, ("x", "y")) / Ly, name="<F_cond>", layout="g"
     )
     horiz_aves.add_task(
-        d3.Integrate(d3.Integrate(f_cond, "x"), "y") / Ly, name="<F_cond>", layout="g"
-    )
-    horiz_aves.add_task(
-        d3.Integrate(d3.Integrate(f_conv, "x"), "y") / Ly, name="<F_conv>", layout="g"
+        d3.Integrate(f_conv, ("x", "y")) / Ly, name="<F_conv>", layout="g"
     )
 
     # ==================
@@ -503,7 +507,7 @@ if not args["--test"]:
     scalars = solver.evaluator.add_file_handler(
         outpath + "scalars",
         iter=scalar_iter,
-        max_writes=2500,
+        max_writes=5000,
         mode=fh_mode,
         parallel=parallel,
     )
@@ -523,16 +527,83 @@ if not args["--test"]:
         d3.Integrate(d3.Integrate(Temp(z=0), "y"), "x") / Ly, name="<T(0)>", layout="g"
     )
     scalars.add_task(
-        d3.Integrate(d3.Integrate(d3.Integrate(Temp, "x"), "y"), "z") / (Ly * Lz),
+        d3.Integrate(Temp, ("x", "y", "z")) / (Ly * Lz),
         name="<<T>>",
         layout="g",
     )
     scalars.add_task(
-        d3.Integrate(d3.Integrate(d3.Integrate(f_cond + f_conv, "x"), "y"), "z")
-        / (Ly * Lz),
+        d3.Integrate(f_cond + f_conv, ("x", "y", "z")) / (Ly * Lz),
         name="F_tot",
         layout="g",
     )
+
+    tests = solver.evaluator.add_file_handler(
+        outpath + "tests",
+        iter=scalar_iter,
+        max_writes=5000,
+        mode=fh_mode,
+        parallel=parallel,
+    )
+
+    # tests.add_task(
+    #     1 + d3.Integrate(f_conv / f_cond, ("x", "y", "z")) / (Ly * Lz),
+    #     name="Nu_domain",
+    #     layout="g",
+    # )
+    tests.add_task(
+        d3.Integrate(f_conv, ("x", "y")),
+        name="<F_conv>",
+        layout="g",
+    )
+    tests.add_task(
+        d3.Integrate(f_cond, ("x", "y")),
+        name="<F_cond>",
+        layout="g",
+    )
+
+    tests.add_task(
+        d3.Integrate(f_conv, ("x", "y")) / d3.Integrate(f_cond, ("x", "y")),
+        name="<F_conv> by <F_cond>",
+        layout="g",
+    )
+    tests.add_task(
+        d3.Integrate(f_conv / f_cond, ("x", "y")) / (Ly * Lz),
+        name="< F_conv by F_cond >",
+        layout="g",
+    )
+    tests.add_task(
+        M * (d3.Integrate(f_conv / f_cond, ("x", "y"))),
+        name="M*< F_conv by F_cond >",
+        layout="g",
+    )
+    tests.add_task(
+        M * d3.Integrate(f_conv, ("x", "y")) / d3.Integrate(f_cond, ("x", "y")),
+        name="M*<F_conv> by <F_cond>",
+        layout="g",
+    )
+    tests.add_task(
+        f_conv,
+        name="F_conv",
+        layout="g",
+    )
+    tests.add_task(
+        f_cond,
+        name="F_cond",
+        layout="g",
+    )
+
+    tests.add_task(
+        M,
+        name="M",
+        layout="g",
+    )
+
+    # tests.add_task(
+    #     1
+    #     + d3.Average(M * M * M * (d3.Integrate(f_conv / f_cond, ("x", "y"))), "z") / (Ly * Lz),
+    #     name="Nu_bulk",
+    #     layout="g",
+    # )
 
     # analysis = solver.evaluator.add_file_handler(
     #     outpath + "analysis",
