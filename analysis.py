@@ -83,7 +83,7 @@ def get_heat_func(heat):
             )
         else:
             raise ValueError(f"Invalid heat function {heat}")
-        
+
         return heat_func
 
 
@@ -236,15 +236,20 @@ if args["--time-tracks"]:
     )
 
     RE_ax = KE_ax.twinx()
-    RE_ax.scatter(sc_time[:AEI:skip_cadence], Re[:AEI:skip_cadence], marker='+', c="cyan", alpha=0.5)
+    RE_ax.scatter(
+        sc_time[:AEI:skip_cadence],
+        Re[:AEI:skip_cadence],
+        marker="+",
+        c="cyan",
+        alpha=0.5,
+    )
     RE_ax.plot(
         sc_time[:AEI:skip_cadence], Re_run_ave[:AEI], label="Reynolds Number", c="b"
     )
     # RE_ax.set_ylabel("Re")
     RE_ax.set_ylabel("Re", color="blue")
-    RE_ax.tick_params(axis='y', labelcolor="blue")
+    RE_ax.tick_params(axis="y", labelcolor="blue")
 
-    
     ylims = KE_ax.get_ylim()
     KE_ax.scatter(sc_time[:AEI:skip_cadence], KE[:AEI:skip_cadence], marker="+", c="k")
     KE_ax.set_ylim(ylims)
@@ -274,7 +279,7 @@ if args["--flux-balance"]:
     # AEI = get_index(horiz_time, float(2.0))
     with open(direc + "run_params/runparams.json", "r") as file:
         params = json.load(file)
-        Ly = params['Ly']
+        Ly = params["Ly"]
 
     AEI = None
     f_tot = F_cond + F_conv
@@ -292,7 +297,7 @@ if args["--flux-balance"]:
     ax.plot(F_cond_bar, z, label=r"$F_{cond}$", c="b")
     ax.plot(F_conv_bar, z, label=r"$F_{conv}$", c="r")
     ax.plot(F_imp, z, label=r"$F_{imp}$", c="g")
-    ax.plot(F_tot_bar, z, label=r"$F_{tot}$", c="k", ls='--')
+    ax.plot(F_tot_bar, z, label=r"$F_{tot}$", c="k", ls="--")
     ax.set_xlabel("Flux")
     ax.set_ylabel("z")
     plt.legend(loc="best")
