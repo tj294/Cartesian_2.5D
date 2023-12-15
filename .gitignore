@@ -5,3 +5,5 @@ slurm*
 data
 RE_inst.png
 reynolds.py
+*.pdf 
+*.ipynb
