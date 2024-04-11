@@ -178,8 +178,10 @@ if args["--nusselt"]:
     inv_t0_ave = np.nanmean(inv_t0[scalar_ASI:], axis=0)
     print(f"\t1/<T(z=0)> =\t\t{inv_t0_ave:.5f}")
 
-    F_cond_ave = np.nanmean(F_cond, axis=1)
-    F_conv_ave = np.nanmean(F_conv, axis=1)
+    # F_cond_ave = np.nanmean(F_cond, axis=1)
+    # F_conv_ave = np.nanmean(F_conv, axis=1)
+    F_cond_ave = np.trapz(F_cond, z, axis=1)
+    F_conv_ave = np.trapz(F_conv, z, axis=1)
     flux_nu = 1 + (F_conv_ave / F_cond_ave)
     flux_nu_ave = np.nanmean(flux_nu[prof_ASI:], axis=0)
     print(f"\t1 + F_conv/F_cond =\t{flux_nu_ave:.5f}")
