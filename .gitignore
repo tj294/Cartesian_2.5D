@@ -5,3 +5,7 @@ slurm*
 data
 RE_inst.png
 reynolds.py
+*.ipynb
+*.gif
+*.pdf
+make_spectra.py
