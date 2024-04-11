@@ -11,7 +11,8 @@ Options:
     -t --time-tracks                # Plot the time-track data (KE and 1/<T>)
     -d --depth-profile              # Plot the depth profile of the temperature
     -f --flux-balance               # Plot the flux-balance with depth
-    -i --info                       # Information required 
+    -i --info                       # Information required
+    -n --nusselt                    # Print different Nusselt Numbers
     -g --gif                        # Create a gif of the convection
     -h --help                       # Display this help message
     -v --version                    # Display the version
@@ -19,6 +20,7 @@ Options:
     --ASI [TIME]                    # Sim-time to begin average [default: 0.65]
 
 """
+
 from docopt import docopt
 import h5py as h5
 import numpy as np
@@ -49,6 +51,7 @@ def rolling_average(quantity, time, window=0.1):
 
 def get_index(time, start_time):
     return np.abs(time - start_time).argmin()
+
 
 def get_heat_func(heat):
     try:
@@ -100,6 +103,110 @@ makedirs(outpath, exist_ok=True)
 
 start_time = timer.time()
 print("====== Data Read-In ======")
+if args["--nusselt"]:
+    scalar_files = glob(direc + "scalars/scalars_s*.h5")
+    scalar_files.sort(key=lambda f: int(re.sub("\D", "", f)))
+    snap_files = glob(direc + "snapshots/snapshots_s*.h5")
+    snap_files.sort(key=lambda f: int(re.sub("\D", "", f)))
+    prof_files = glob(direc + "horiz_aves/horiz_aves_s*.h5")
+    prof_files.sort(key=lambda f: int(re.sub("\D", "", f)))
+
+    for i, sc_file in enumerate(scalar_files):
+        if i == 0:
+            with h5.File(sc_file, "r") as file:
+                sc_time = np.array(file["scales"]["sim_time"])
+                T_0 = np.array(file["tasks"]["<T(0)>"])[:, 0, 0, 0]
+        else:
+            with h5.File(sc_file, "r") as file:
+                sc_time = np.concatenate(
+                    (sc_time, np.array(file["scales"]["sim_time"])), axis=0
+                )
+                T_0 = np.concatenate(
+                    (T_0, np.array(file["tasks"]["<T(0)>"])[:, 0, 0, 0]), axis=0
+                )
+
+    for i, snap_file in enumerate(snap_files):
+        if i == 0:
+            with h5.File(snap_file, "r") as file:
+                snap_time = np.array(file["scales"]["sim_time"])
+                max_T = np.max(np.array(file["tasks"]["Temp"])[:, 0, :, :], (1, 2))
+                min_T = np.min(np.array(file["tasks"]["Temp"])[:, 0, :, :], (1, 2))
+        else:
+            with h5.File(snap_file, "r") as file:
+                snap_time = np.concatenate(
+                    (snap_time, np.array(file["scales"]["sim_time"])), axis=0
+                )
+                max_T = np.concatenate(
+                    (
+                        max_T,
+                        np.max(np.array(file["tasks"]["Temp"])[:, 0, :, :], (1, 2)),
+                    ),
+                    axis=0,
+                )
+                min_T = np.concatenate(
+                    (
+                        min_T,
+                        np.min(np.array(file["tasks"]["Temp"])[:, 0, :, :], (1, 2)),
+                    ),
+                    axis=0,
+                )
+
+    for i, prof_file in enumerate(prof_files):
+        if i == 0:
+            with h5.File(prof_file, "r") as file:
+                prof_time = np.array(file["scales"]["sim_time"])
+                z = np.array(file["tasks"]["<T>"].dims[3]["z"])
+                F_cond = np.array(file["tasks"]["<F_cond>"])[:, 0, 0, :]
+                F_conv = np.array(file["tasks"]["<F_conv>"])[:, 0, 0, :]
+        else:
+            with h5.File(prof_file, "r") as file:
+                prof_time = np.concatenate(
+                    (prof_time, np.array(file["scales"]["sim_time"])), axis=0
+                )
+                F_cond = np.concatenate(
+                    (F_cond, np.array(file["tasks"]["<F_cond>"])[:, 0, 0, :]), axis=0
+                )
+                F_conv = np.concatenate(
+                    (F_conv, np.array(file["tasks"]["<F_conv>"])[:, 0, 0, :]), axis=0
+                )
+
+    scalar_ASI = get_index(sc_time, float(args["--ASI"]))
+    snap_ASI = get_index(snap_time, float(args["--ASI"]))
+    prof_ASI = get_index(prof_time, float(args["--ASI"]))
+
+    inv_t0 = 1 / T_0
+    inv_t0_ave = np.nanmean(inv_t0[scalar_ASI:], axis=0)
+    print(f"\t1/<T(z=0)> =\t\t{inv_t0_ave:.5f}")
+
+    F_cond_ave = np.nanmean(F_cond, axis=1)
+    F_conv_ave = np.nanmean(F_conv, axis=1)
+    flux_nu = 1 + (F_conv_ave / F_cond_ave)
+    flux_nu_ave = np.nanmean(flux_nu[prof_ASI:], axis=0)
+    print(f"\t1 + F_conv/F_cond =\t{flux_nu_ave:.5f}")
+
+    inv_delta_T = 1 / (max_T - min_T)
+    inv_delta_T_ave = np.nanmean(inv_delta_T[snap_ASI:], axis=0)
+    print(f"\t1/dT = \t\t\t{inv_delta_T_ave:.5f}")
+    print(
+        f"\t\t T_max = {np.nanmean(max_T[snap_ASI:]):.5f}, T_min = {np.nanmean(min_T[snap_ASI:]):.5f}"
+    )
+
+    with open(direc + "run_params/runparams.json", "r") as file:
+        run_params = json.load(file)
+        Ra = run_params["Ra"]
+
+    with open(direc + "Nu_compar.json", "w") as file:
+        json.dump(
+            {
+                "Ra": Ra,
+                "inv_T0": inv_t0_ave,
+                "flux_ratio": flux_nu_ave,
+                "ind_dT": inv_delta_T_ave,
+            },
+            file,
+            indent=4,
+        )
+
 if args["--info"] or args["--time-tracks"]:
     scalar_files = glob(direc + "scalars/scalars_s*.h5")
     scalar_files.sort(key=lambda f: int(re.sub("\D", "", f)))
