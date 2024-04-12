@@ -180,10 +180,13 @@ if args["--nusselt"]:
 
     # F_cond_ave = np.nanmean(F_cond, axis=1)
     # F_conv_ave = np.nanmean(F_conv, axis=1)
-    F_cond_ave = np.trapz(F_cond, z, axis=1)
-    F_conv_ave = np.trapz(F_conv, z, axis=1)
-    flux_nu = 1 + (F_conv_ave / F_cond_ave)
-    flux_nu_ave = np.nanmean(flux_nu[prof_ASI:], axis=0)
+
+    F_cond_bar = np.nanmean(F_cond[prof_ASI:, :], axis=0)
+    F_conv_bar = np.nanmean(F_conv[prof_ASI:, :], axis=0)
+    F_cond_ave = np.trapz(F_cond_bar, z, axis=0)
+    F_conv_ave = np.trapz(F_conv_bar, z, axis=0)
+    flux_nu_ave = 1 + (F_conv_ave / F_cond_ave)
+
     print(f"\t1 + F_conv/F_cond =\t{flux_nu_ave:.5f}")
 
     inv_delta_T = 1 / (max_T - min_T)
@@ -212,7 +215,7 @@ if args["--nusselt"]:
 if args["--info"] or args["--time-tracks"]:
     scalar_files = glob(direc + "scalars/scalars_s*.h5")
     scalar_files.sort(key=lambda f: int(re.sub("\D", "", f)))
-    print(scalar_files)
+
     for i, sc_file in enumerate(scalar_files):
         if i == 0:
             with h5.File(sc_file, "r") as file:
@@ -237,7 +240,7 @@ if args["--info"] or args["--time-tracks"]:
                         (KE, np.array(file["tasks"]["KE"])[:, 0, 0, 0]), axis=0
                     )
     # print(sc_time)
-if args["--flux-balance"] or args["--depth-profile"]:
+if args["--flux-balance"] or args["--depth-profile"] or args["--info"]:
     horiz_files = glob(direc + "horiz_aves/horiz_aves_s*.h5")
     horiz_files.sort(
         key=lambda f: int(re.sub("\D", "", f))
@@ -247,7 +250,7 @@ if args["--flux-balance"] or args["--depth-profile"]:
             with h5.File(h_file, "r") as file:
                 horiz_time = np.array(file["scales"]["sim_time"])
                 z = np.array(file["tasks"]["<T>"].dims[3]["z"])
-                if args["--flux-balance"]:
+                if args["--flux-balance"] or args["--info"]:
                     F_cond = np.array(file["tasks"]["<F_cond>"])[:, 0, 0, :]
                     F_conv = np.array(file["tasks"]["<F_conv>"])[:, 0, 0, :]
                 if args["--depth-profile"]:
@@ -257,7 +260,7 @@ if args["--flux-balance"] or args["--depth-profile"]:
                 horiz_time = np.concatenate(
                     (horiz_time, np.array(file["scales"]["sim_time"])), axis=0
                 )
-                if args["--flux-balance"]:
+                if args["--flux-balance"] or args["--info"]:
                     F_cond = np.concatenate(
                         (F_cond, np.array(file["tasks"]["<F_cond>"])[:, 0, 0, :]),
                         axis=0,
@@ -301,13 +304,24 @@ print(f"Done ({read_finish:.2f} seconds)")
 if args["--info"]:
     print("====== Nusselt Number ======")
     Nu_start = timer.time()
-    ASI = get_index(sc_time, float(args["--ASI"]))
-    AEI = get_index(sc_time, float(2.0))
-    AEI = None
-    dT = np.nanmean(deltaT[ASI:AEI], axis=0)
-    Re_ave = np.nanmean(Re[ASI:AEI], axis=0)
+    scalar_ASI = get_index(sc_time, float(args["--ASI"]))
+    scalar_AEI = get_index(sc_time, float(2.0))
+    scalar_AEI = None
 
-    print(f"\t ΔT = {dT:.3f}\n" + f"\t 1/ΔT = {1/dT:.3f}")
+    prof_ASI = get_index(horiz_time, float(args["--ASI"]))
+    prof_AEI = get_index(horiz_time, float(2.0))
+    prof_AEI = None
+
+    # dT = np.nanmean(deltaT[scalar_ASI:scalar_AEI], axis=0)
+    Re_ave = np.nanmean(Re[scalar_ASI:scalar_AEI], axis=0)
+
+    F_cond_bar = np.nanmean(F_cond[prof_ASI:prof_AEI, :], axis=0)
+    F_conv_bar = np.nanmean(F_conv[prof_ASI:prof_AEI, :], axis=0)
+    F_cond_ave = np.trapz(F_cond_bar, z, axis=0)
+    F_conv_ave = np.trapz(F_conv_bar, z, axis=0)
+    nu = 1 + (F_conv_ave / F_cond_ave)
+
+    print(f"\t Nu = {nu:.3f}")
     print(f"\t Re = {Re_ave:.3f}")
 
     with open(direc + "run_params/runparams.json", "r") as file:
@@ -316,9 +330,7 @@ if args["--info"]:
         Pr = run_params["Pr"]
         Ta = run_params["Ta"]
     with open(direc + "Nu.json", "w") as file:
-        json.dump(
-            {"Ra": Ra, "Pr": Pr, "Ta": Ta, "ΔT": dT, "Nu": 1 / dT}, file, indent=4
-        )
+        json.dump({"Ra": Ra, "Pr": Pr, "Ta": Ta, "Nu": nu}, file, indent=4)
     print(f"Done ({timer.time() - Nu_start:.2f}s).")
 
 # # ! ============== Time-Tracks ============== ! #
