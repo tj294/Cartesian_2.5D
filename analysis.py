@@ -17,6 +17,7 @@ Options:
     -h --help                       # Display this help message
     -v --version                    # Display the version
     --cadence [CADENCE]             # Cadence of the gifs [default: 1]
+    --heat-func [HEAT]              # Heat function to use if not in snapshot [default: exp]
     --ASI [TIME]                    # Sim-time to begin average [default: 0.65]
 
 """
@@ -56,11 +57,11 @@ def get_index(time, start_time):
 def get_heat_func(heat):
     try:
         with h5.File(direc + "snapshots/snapshots_s1.h5", "r") as file:
-            heat_func = np.array(file["tasks"]["g"])[0, 0, 0, :]
-        print("Using heat function from snapshots")
+            heat_func = np.array(file["tasks"]["heat"])[0, 0, 0, :]
+        print("Reading heat function from snapshots")
         return heat_func
     except:
-        print("Writing heat function")
+        print(f"Heat Func not found.\nWriting {heat} heat function")
         if heat == "exp":
             l = 0.1
             beta = 1
@@ -408,7 +409,7 @@ if args["--flux-balance"]:
     F_conv_bar = np.nanmean(F_conv[ASI:AEI], axis=0)
     F_tot_bar = np.nanmean(f_tot[ASI:AEI], axis=0)
 
-    heat_func = get_heat_func("exp")
+    heat_func = get_heat_func(args["--heat-func"])
     F_imp = Ly * cumtrapz(heat_func, z, initial=0)
     discrepency = np.mean(np.abs(F_imp - F_tot_bar))
     print(f"F_imp - F_tot discrepency = {discrepency:.3f}")
@@ -480,7 +481,7 @@ if args["--gif"]:
     # vmin = 1e-3
     # vmin = np.min(temp[len(temp) // 3:])
     vmin = np.min(temp)
-    print(vmin, vmax)
+    # print(vmin, vmax)
     linthresh = np.abs(vmin)
     # cNorm = mpl.colors.LogNorm(vmin=vmin, vmax=vmax, clip=False)
 
