@@ -252,10 +252,10 @@ if args["--flux-balance"] or args["--depth-profile"] or args["--info"]:
                 horiz_time = np.array(file["scales"]["sim_time"])
                 z = np.array(file["tasks"]["<T>"].dims[3]["z"])
                 if args["--flux-balance"] or args["--info"]:
-                    F_cond = np.array(file["tasks"]["<F_cond>"])[:, 0, 0, :]
-                    F_conv = np.array(file["tasks"]["<F_conv>"])[:, 0, 0, :]
+                    F_cond = np.array(file["tasks"]["<F_cond>"])[:, 0, 0, :] / 4
+                    F_conv = np.array(file["tasks"]["<F_conv>"])[:, 0, 0, :] / 4
                 if args["--depth-profile"]:
-                    temp_hor = np.array(file["tasks"]["<T>"])[:, 0, 0, :]
+                    temp_hor = np.array(file["tasks"]["<T>"])[:, 0, 0, :] / 4
         else:
             with h5.File(h_file, "r") as file:
                 horiz_time = np.concatenate(
@@ -263,16 +263,17 @@ if args["--flux-balance"] or args["--depth-profile"] or args["--info"]:
                 )
                 if args["--flux-balance"] or args["--info"]:
                     F_cond = np.concatenate(
-                        (F_cond, np.array(file["tasks"]["<F_cond>"])[:, 0, 0, :]),
+                        (F_cond, np.array(file["tasks"]["<F_cond>"])[:, 0, 0, :] / 4),
                         axis=0,
                     )
                     F_conv = np.concatenate(
-                        (F_conv, np.array(file["tasks"]["<F_conv>"])[:, 0, 0, :]),
+                        (F_conv, np.array(file["tasks"]["<F_conv>"])[:, 0, 0, :] / 4),
                         axis=0,
                     )
                 if args["--depth-profile"]:
                     temp_hor = np.concatenate(
-                        (temp_hor, np.array(file["tasks"]["<T>"])[:, 0, 0, :]), axis=0
+                        (temp_hor, np.array(file["tasks"]["<T>"])[:, 0, 0, :] / 4),
+                        axis=0,
                     )
 
 if args["--gif"]:
@@ -410,7 +411,7 @@ if args["--flux-balance"]:
     F_tot_bar = np.nanmean(f_tot[ASI:AEI], axis=0)
 
     heat_func = get_heat_func(args["--heat-func"])
-    F_imp = Ly * cumtrapz(heat_func, z, initial=0)
+    F_imp = cumtrapz(heat_func, z, initial=0)
     discrepency = np.mean(np.abs(F_imp - F_tot_bar))
     print(f"F_imp - F_tot discrepency = {discrepency:.3f}")
     # F_imp *= scaling
