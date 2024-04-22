@@ -36,6 +36,7 @@ Options:
     -k, --kill                      # Kills the program after building the solver.
     -f, --function                  # Plots the heating function
 """
+
 import numpy as np
 import dedalus.public as d3
 import logging
@@ -139,7 +140,7 @@ parallel = None
 # ====================
 # SET UP PROBLEM
 # ====================
-dealias = 3/2
+dealias = 3 / 2
 dtype = np.float64
 timestepper = d3.RK443
 
@@ -241,36 +242,6 @@ else:
     #! === No Heating ===
     heat["g"] = np.zeros(heat["g"].shape)
 
-if args["--function"]:
-    import matplotlib.pyplot as plt
-
-    fig, ax = plt.subplots(figsize=(5, 5))
-    ax.scatter(heat["g"], z, c="k", s=5)
-    if args["--currie"]:
-        ax.axhspan(0, Delta, color="r", alpha=0.2)
-        ax.text(np.min(heat["g"]), 0.05, "Heating Zone", color="r")
-        ax.axhspan(0.5 - (H / 2), 0.5 + (H / 2), color="k", alpha=0.2)
-        ax.text(np.min(heat["g"]), 0.5, "Convection Zone", color="k")
-        ax.axhspan(Lz - Delta, 1, color="blue", alpha=0.2)
-        ax.text(0.4 * np.max(heat["g"]), 0.95, "Cooling Zone", color="blue")
-        ax.set_xlabel("Heat")
-        ax.set_ylabel("z")
-        ax.set_title("Currie Heat Function")
-    if args["--kazemi"]:
-        line = -l * np.log(beta / a)
-        ax.axhspan(0, line, color="r", alpha=0.2)
-        ax.axhspan(line, 1, color="blue", alpha=0.2)
-        ax.text(8, 0.1, "Heating Zone", ha="center", color="r")
-        ax.text(8, 0.6, "Cooling Zone", ha="center", color="blue")
-        ax.set_xlabel("Heat")
-        ax.set_ylabel("z")
-        ax.set_title("Kazemi Heat Function")
-    if not args["--test"]:
-        fig.savefig(outpath + "heat_func.pdf")
-    else:
-        fig.savefig("heat_func.pdf")
-        exit(0)
-
 # === Initialise Problem ===
 problem = d3.IVP(
     [u, p, Temp, tau_u1, tau_u2, tau_T3, tau_T4, tau_p], time="t", namespace=locals()
@@ -305,51 +276,6 @@ else:
     )
 
 # ? === Driving Boundary Conditions ===
-#! === Boundary Driven ===
-# * === RB1 (Temp gradient)===
-# # T=0 at top, T=1 at bottom
-# problem.add_equation("Temp(z=0) = 1")
-# problem.add_equation("Temp(z=Lz) = 0")
-
-# * === RB2 (fixed flux) ===
-# # Goluskin 2015
-# problem.add_equation('Tz(z=0) = -F')
-# problem.add_equation('Tz(z=Lz) = -F')
-
-# *=== RB3 ===*
-# # Fixed F at bottom, T=0 at top
-# problem.add_equation('Tz(z=0) = -F')
-# problem.add_equation('Temp(z=Lz) = 0')
-
-#! === Internally Heated ===
-# * === IH1 (T=0) ===
-# # T=0 at top and bottom (Goluskin & van der Poel 2016)
-# problem.add_equation('Temp(z=0) = 0')
-# problem.add_equation('Temp(z=Lz) = 0')
-
-# * === IH2 ===
-# # Insulating bottom, fixed flux top
-# problem.add_equation('Tz(z=0) = 0')
-# problem.add_equation('Tz(z=Lz) = -F')
-# if args["--currie"] or args["--kazemi"]:
-#     if args["--ff"]:
-#         # Insulating Top and Bottom
-#         problem.add_equation("Tz(z=0) = 0")
-#         problem.add_equation("Tz(z=Lz) = 0")
-#     else:
-#         # * === IH3 ===
-#         # # Kazemi et al. 2022
-#         # # Insulating bottom, T=0 top
-#         problem.add_equation("Tz(z=0) = 0")
-#         problem.add_equation("Temp(z=Lz) = 0")
-# else:
-#     if args["--ff"]:
-#         problem.add_equation("Tz(z=0) = -F")
-#         problem.add_equation("Tz(z=Lz) = 0")
-#     else:
-#         problem.add_equation("Tz(z=0) = -F")
-#         problem.add_equation("Temp(z=Lz) = 0")
-
 if args["--top"] == "insulating":
     problem.add_equation("Tz(z=Lz) = 0")
     boundary_conditions = "Insulating top"
@@ -476,7 +402,7 @@ if not args["--test"]:
         parallel=parallel,
     )
     snapshots.add_tasks(solver.state, layout="g")
-    snapshots.add_task(heat, name='heat', layout="g")
+    snapshots.add_task(heat, name="heat", layout="g")
     # ==================
     #   HORIZONTAL AVE
     # ==================
@@ -488,7 +414,7 @@ if not args["--test"]:
         parallel=parallel,
     )
     horiz_aves.add_task(
-        d3.Integrate(d3.Integrate(Temp, "x"), "y") / Ly, name="<T>", layout="g"
+        d3.Integrate(d3.Integrate(Temp, "x"), "y") / (Ly * Ly), name="<T>", layout="g"
     )
     horiz_aves.add_task(
         d3.Integrate(d3.Integrate(f_cond, "x"), "y") / Ly, name="<F_cond>", layout="g"
