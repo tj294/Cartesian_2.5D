@@ -3,3 +3,14 @@ __pycache__
 */
 slurm*
 data
+__pycache__
+*script.sh
+*/
+slurm*
+data
+RE_inst.png
+reynolds.py
+*.ipynb
+*.gif
+*.pdf
+make_spectra.py
