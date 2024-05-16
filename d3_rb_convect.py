@@ -97,7 +97,7 @@ if args["--Nz"]:
     else:
         Ny = 2 * Nz
 else:
-    #? Might never run since resolution arguments have default arguments?
+    # ? Might never run since resolution arguments have default arguments?
     if args["--input"]:
         with open(restart_path + "run_params/runparams.json", "r") as f:
             inparams = json.load(f)
@@ -360,12 +360,12 @@ if args["--input"]:
         )
         exit(-10)
 else:
-    #? Need to change this to a better initial condition
+    # ? Need to change this to a better initial condition
     Temp.fill_random("g", seed=42, distribution="normal", scale=1e-5)
     # Temp.low_pass_filter(scales=0.25)
     # Temp.high_pass_filter(scales=0.125)
     Temp["g"] *= z * (Lz - z)
-    Temp["g"] += Lz - z
+    # Temp["g"] += Lz - z
 
     first_iter = 0
     dt = max_timestep
