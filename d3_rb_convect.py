@@ -41,6 +41,7 @@ import numpy as np
 import dedalus.public as d3
 import logging
 import os
+import sys
 import pathlib
 from glob import glob
 from docopt import docopt
@@ -392,6 +393,9 @@ if not args["--test"]:
 
     with open(outpath + "run_params/runparams.json", "w") as run_file:
         run_file.write(run_params)
+
+    with open(outpath + "run_params/args.txt", "w") as file:
+        file.write(" ".join(sys.argv))
 
     # ====================
     #   2.5D DATA FIELD
