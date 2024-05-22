@@ -11,6 +11,7 @@ Options:
     -t --time-tracks                # Plot the time-track data (KE and 1/<T>)
     -d --depth-profile              # Plot the depth profile of the temperature
     -f --flux-balance               # Plot the flux-balance with depth
+    -p --profile-dissipation        # Plot the depth profile of the dissipation
     -i --info                       # Information required
     -n --nusselt                    # Print different Nusselt Numbers
     -g --gif                        # Create a gif of the convection
@@ -52,6 +53,22 @@ def rolling_average(quantity, time, window=0.1):
 
 def get_index(time, start_time):
     return np.abs(time - start_time).argmin()
+
+
+def calculate_crossing(curve):
+    closest_idxs = np.argpartition(np.abs(curve - 1.0), 15)[:16]
+    closest_idxs = sorted(closest_idxs, key=lambda x: np.abs(curve - 1.0)[x])
+    crossings = []
+    threshold = 10
+    for i, x in enumerate(closest_idxs):
+        if i == 0:
+            crossings.append(x)
+        else:
+            if np.abs(x - closest_idxs[i - 1]) >= threshold:
+                crossings.append(x)
+    for idx in crossings:
+        if np.gradient(curve)[idx] < 0:
+            return idx
 
 
 def get_heat_func(heat):
@@ -276,7 +293,7 @@ if args["--flux-balance"] or args["--depth-profile"] or args["--info"]:
                         axis=0,
                     )
 
-if args["--gif"]:
+if args["--gif"] or args["--profile-dissipation"]:
     snap_files = glob(direc + "snapshots/snapshots_s*.h5")
     snap_files.sort(key=lambda f: int(re.sub("\D", "", f)))
     for i, s_file in enumerate(snap_files):
@@ -284,7 +301,7 @@ if args["--gif"]:
             with h5.File(s_file, "r") as file:
                 snap_time = np.array(file["scales"]["sim_time"])
                 temp = np.array(file["tasks"]["Temp"])[:, 0, :, :]
-                vel = np.array(file["tasks"]["u"])[:, 1:3, 0, :, :]
+                vel = np.array(file["tasks"]["u"])[:, :, 0, :, :]
                 y = np.array(file["tasks"]["Temp"].dims[2]["y"])
                 z = np.array(file["tasks"]["Temp"].dims[3]["z"])
         else:
@@ -296,7 +313,7 @@ if args["--gif"]:
                     (temp, np.array(file["tasks"]["Temp"])[:, 0, :, :]), axis=0
                 )
                 vel = np.concatenate(
-                    (vel, np.array(file["tasks"]["u"])[:, 1:3, 0, :, :]), axis=0
+                    (vel, np.array(file["tasks"]["u"])[:, :, 0, :, :]), axis=0
                 )
 
 
@@ -390,6 +407,91 @@ if args["--time-tracks"]:
     plt.tight_layout()
     plt.savefig(outpath + "time_tracks.pdf")
     print(f"Done ({timer.time() - time_start:.2f}s).")
+
+# # ! ============== Dissipation  ============== ! #
+if args["--profile-dissipation"]:
+    print("====== Dissipation Profile ======")
+    diss_start = timer.time()
+
+    ASI = get_index(snap_time, float(args["--ASI"]))
+
+    u = vel[:, 0, :, :]
+    v = vel[:, 1, :, :]
+    w = vel[:, 2, :, :]
+
+    dyu = np.gradient(u, y, axis=1)
+    dzu = np.gradient(u, z, axis=2)
+    dyv = np.gradient(v, y, axis=1)
+    dzv = np.gradient(v, z, axis=2)
+    dyw = np.gradient(w, y, axis=1)
+    dzw = np.gradient(w, z, axis=2)
+    dyT = np.gradient(temp, y, axis=1)
+    dzT = np.gradient(temp, z, axis=2)
+
+    viscous_diss = (
+        dyu**2 + 2 * dyv**2 + dyw**2 + dzu**2 + dzv**2 + 2 * dzw**2 + 2 * dyw * dzv
+    )
+    thermal_diss = dyT**2 + dzT**2
+
+    viscous_prof_inst = np.trapz(viscous_diss, x=y, axis=1)
+    thermal_prof_inst = np.trapz(thermal_diss, x=y, axis=1)
+
+    viscous_prof_ave = np.trapz(viscous_prof_inst[ASI:], x=snap_time[ASI:], axis=0)
+    thermal_prof_ave = np.trapz(thermal_prof_inst[ASI:], x=snap_time[ASI:], axis=0)
+
+    viscous_diss_all = np.trapz(viscous_prof_ave, x=z)
+    thermal_diss_all = np.trapz(thermal_prof_ave, x=z)
+    print(thermal_prof_ave / thermal_diss_all)
+    viscous_lambda_idx = calculate_crossing(viscous_prof_ave / viscous_diss_all)
+    thermal_lambda_idx = calculate_crossing(thermal_prof_ave / thermal_diss_all)
+
+    viscous_lambda = z[viscous_lambda_idx]
+    thermal_lambda = z[thermal_lambda_idx]
+
+    fig, ax = plt.subplots(1, 1, figsize=(6, 4))
+    # ax2 = ax.twinx()
+    ax.plot(
+        z,
+        viscous_prof_ave / viscous_diss_all,
+        label=r"$\epsilon_U$",
+        c="r",
+    )
+    ax.plot(
+        z,
+        thermal_prof_ave / thermal_diss_all,
+        label=r"$\epsilon_T$",
+        c="b",
+    )
+    ax.axhline(1.0, c="k", ls=":")
+    ax.axvline(viscous_lambda, c="r", ls=":")
+    ax.axvline(thermal_lambda, c="b", ls=":")
+
+    # ax.spines['left'].set_color('r')
+    # ax.tick_params(axis='y', colors='r')
+    ax.set_ylabel(r"$\langle \epsilon \rangle_H (z)$  / $\langle \epsilon \rangle_V$")
+
+    # ax2.axhline(thermal_diss_all / thermal_diss_all, c='b', ls=':')
+    # ax2.spines['left'].set_color('r')
+    # ax2.spines['right'].set_color('b')
+    # ax2.tick_params(axis='y', colors='b')
+    # ax2.set_ylabel(r"$\langle \epsilon_T \rangle_H (z)$ / $\langle \epsilon_T \rangle_V$", color='b')
+    ax.legend()
+    ax.set_title("Time-Averaged Dissipation")
+    ax.set_xlabel("z")
+    plt.tight_layout()
+    plt.savefig(outpath + "dissipation_profile.pdf")
+
+    print(f"\n<ϵ_U> = {viscous_diss_all:.3e},\n<ϵ_T> = {thermal_diss_all:.3f}")
+    print(f"\nλ_U = {viscous_lambda:.3f},\nλ_T = {thermal_lambda:.3f}")
+
+    np.savez(
+        direc + "/dissipations",
+        viscous=viscous_prof_ave / viscous_diss_all,
+        thermal=thermal_prof_ave / thermal_diss_all,
+        z=z,
+    )
+
+    print(f"Done ({timer.time() - diss_start:.2f}s).")
 
 # # ! ============== Flux Balance ============== ! #
 if args["--flux-balance"]:
@@ -515,8 +617,8 @@ if args["--gif"]:
             ax.quiver(
                 yy[::yspace, ::zspace],
                 zz[::yspace, ::zspace],
-                vel[i, 0, ::yspace, ::zspace],
                 vel[i, 1, ::yspace, ::zspace],
+                vel[i, 2, ::yspace, ::zspace],
                 color="w",
                 pivot="mid",
             )
