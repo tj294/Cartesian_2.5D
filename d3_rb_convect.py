@@ -365,8 +365,13 @@ else:
     Temp.fill_random("g", seed=42, distribution="normal", scale=1e-5)
     # Temp.low_pass_filter(scales=0.25)
     # Temp.high_pass_filter(scales=0.125)
-    Temp["g"] *= z * (Lz - z)
-    # Temp["g"] += Lz - z
+    if args["--kazemi"]:
+        Temp["g"] *= (
+            -a * l * l * np.exp(-z / l) + 0.5 * beta * z * z - a * l * z + a * l + 1
+        )
+    else:
+        Temp["g"] *= z * (Lz - z)
+        # Temp["g"] += Lz - z
 
     first_iter = 0
     dt = max_timestep
