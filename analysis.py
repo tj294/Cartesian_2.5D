@@ -56,19 +56,22 @@ def get_index(time, start_time):
 
 
 def calculate_crossing(curve):
-    closest_idxs = np.argpartition(np.abs(curve - 1.0), 15)[:16]
-    closest_idxs = sorted(closest_idxs, key=lambda x: np.abs(curve - 1.0)[x])
+    sign_change = np.roll(np.sign(curve - 1.0), 1) - np.sign(curve - 1.0)
+    sign_change[0] = 0
+    crossing_idxs = np.argwhere(((sign_change) != 0).astype(int))
     crossings = []
-    threshold = 10
-    for i, x in enumerate(closest_idxs):
+    threshold = 6
+    for i, x in enumerate(crossing_idxs):
         if i == 0:
             crossings.append(x)
         else:
-            if np.abs(x - closest_idxs[i - 1]) >= threshold:
+            if np.abs(x - crossing_idxs[i - 1]) >= threshold:
                 crossings.append(x)
     for idx in crossings:
         if np.gradient(curve)[idx] < 0:
             return idx
+
+    return -10
 
 
 def get_heat_func(heat):
@@ -441,10 +444,11 @@ if args["--profile-dissipation"]:
 
     viscous_diss_all = np.trapz(viscous_prof_ave, x=z)
     thermal_diss_all = np.trapz(thermal_prof_ave, x=z)
-    print(thermal_prof_ave / thermal_diss_all)
+
     viscous_lambda_idx = calculate_crossing(viscous_prof_ave / viscous_diss_all)
     thermal_lambda_idx = calculate_crossing(thermal_prof_ave / thermal_diss_all)
-
+    if viscous_lambda_idx == -10 or thermal_lambda_idx == -10:
+        print(f"diss doesn't cross 1.0")
     viscous_lambda = z[viscous_lambda_idx]
     thermal_lambda = z[thermal_lambda_idx]
 
