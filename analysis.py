@@ -370,10 +370,11 @@ if args["--time-tracks"]:
     # skip_cadence = 1
 
     KE_run_ave = rolling_average(KE[::skip_cadence], sc_time[::skip_cadence])
-    Nu = 1 / deltaT
-    Nu_run_ave = rolling_average(Nu[::skip_cadence], sc_time[::skip_cadence])
+    # Nu = 1 / deltaT
+    # Nu_run_ave = rolling_average(Nu[::skip_cadence], sc_time[::skip_cadence])
     Re_run_ave = rolling_average(Re[::skip_cadence], sc_time[::skip_cadence])
-    fig, [KE_ax, Nu_ax] = plt.subplots(2, 1, figsize=(6, 6), sharex=True)
+    # fig, [KE_ax, Nu_ax] = plt.subplots(2, 1, figsize=(6, 6), sharex=True)
+    fig, KE_ax = plt.subplots(1, 1, figsize=(6, 3))
     KE_ax.plot(
         sc_time[:AEI:skip_cadence], KE_run_ave[:AEI], label="Kinetic Energy", c="r"
     )
@@ -395,18 +396,21 @@ if args["--time-tracks"]:
 
     ylims = KE_ax.get_ylim()
     KE_ax.scatter(sc_time[:AEI:skip_cadence], KE[:AEI:skip_cadence], marker="+", c="k")
-    KE_ax.set_ylim(ylims)
+    # KE_ax.set_ylim(ylims)
     KE_ax.set_xlabel(r"Time, $\tau$")
     KE_ax.set_ylabel("KE")
 
-    Nu_ax.plot(
-        sc_time[:AEI:skip_cadence], Nu_run_ave[:AEI], label="Nusselt Number", c="r"
-    )
-    ylims = Nu_ax.get_ylim()
-    Nu_ax.scatter(sc_time[:AEI:skip_cadence], Nu[:AEI:skip_cadence], marker="+", c="k")
-    Nu_ax.set_ylim(ylims)
-    Nu_ax.set_xlabel(r"Time, $\tau$")
-    Nu_ax.set_ylabel("Nu")
+    # Nu_ax.plot(
+    #     sc_time[:AEI:skip_cadence],
+    #     Nu_run_ave[:AEI:skip_cadence],
+    #     label="Nusselt Number",
+    #     c="r",
+    # )
+    # ylims = Nu_ax.get_ylim()
+    # Nu_ax.scatter(sc_time[:AEI:skip_cadence], Nu[:AEI:skip_cadence], marker="+", c="k")
+    # Nu_ax.set_ylim(ylims)
+    # Nu_ax.set_xlabel(r"Time, $\tau$")
+    # Nu_ax.set_ylabel("Nu")
     plt.tight_layout()
     plt.savefig(outpath + "time_tracks.pdf")
     print(f"Done ({timer.time() - time_start:.2f}s).")
