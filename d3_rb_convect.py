@@ -362,16 +362,43 @@ if args["--input"]:
         exit(-10)
 else:
     # ? Need to change this to a better initial condition
-    Temp.fill_random("g", seed=42, distribution="normal", scale=1e-5)
+    Temp.fill_random("g", seed=42, distribution="normal", scale=1e-3)
     # Temp.low_pass_filter(scales=0.25)
     # Temp.high_pass_filter(scales=0.125)
     if args["--kazemi"]:
-        Temp["g"] *= (
-            -a * l * l * np.exp(-z / l) + 0.5 * beta * z * z - a * l * z + a * l + 1
+        logger.info("Using Kazemi Temp IC")
+        Temp["g"] *= z * (Lz - z)  # ? More noise in middle, and less at top&bottom
+        Temp["g"] += (
+            a * l * l * (np.exp(-Lz / l) - np.exp(-z / l))
+            + 0.5 * beta * (z * z - Lz * Lz)
+            + a * l * (Lz - z)
+        )  # ? T_eq for Kazemi exponential heat function
+    elif args["--currie"]:
+        logger.info("Using Currie Temp IC")
+        Temp["g"] *= z * (Lz - z)  # ? More noise in middle, and less at top&bottom
+        low_temp = lambda z: F * (
+            (Delta / (4 * np.pi * np.pi))
+            * (1 + np.cos((2 * np.pi / Delta) * (z - (Delta / 2))))
+            - z * z / (2 * Delta)
+            + Lz
+            - Delta
+        )
+        mid_temp = lambda z: F * (-z + Lz - Delta / 2)
+        high_temp = lambda z: F * (
+            -Delta
+            / (4 * np.pi * np.pi)
+            * (1 + np.cos((2 * np.pi / Delta) * (z - Lz + Delta / 2)))
+            + 1 / (2 * Delta) * (z * z - 2 * Lz * z + Lz * Lz)
+        )
+        Temp["g"] += np.piecewise(
+            z,
+            [z <= Delta, z >= Lz - Delta],
+            [low_temp, high_temp, mid_temp],
         )
     else:
-        Temp["g"] *= z * (Lz - z)
-        # Temp["g"] += Lz - z
+        logger.info("Using Boundary Temp IC")
+        Temp["g"] *= z * (Lz - z)  # ? More noise in middle, and less at top&bottom
+        Temp["g"] += Lz - z  # ? T_conductive for boundary driven convection
 
     first_iter = 0
     dt = max_timestep
