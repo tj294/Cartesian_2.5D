@@ -490,7 +490,7 @@ if args["--profile-dissipation"]:
     plt.savefig(outpath + "dissipation_profile.pdf")
 
     print(f"\n<ϵ_U> = {viscous_diss_all:.3e},\n<ϵ_T> = {thermal_diss_all:.3f}")
-    print(f"\nλ_U = {viscous_lambda[0]:.3f},\nλ_T = {thermal_lambda[0]:.3f}")
+    # print(f"\nλ_U = {viscous_lambda[0]:.3f},\nλ_T = {thermal_lambda[0]:.3f}")
 
     np.savez(
         direc + "/dissipations",
