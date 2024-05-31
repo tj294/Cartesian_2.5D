@@ -40,6 +40,7 @@ Options:
 import numpy as np
 import dedalus.public as d3
 import logging
+from datetime import datetime
 import os
 import sys
 import pathlib
@@ -362,7 +363,7 @@ if args["--input"]:
         exit(-10)
 else:
     # ? Need to change this to a better initial condition
-    Temp.fill_random("g", seed=42, distribution="normal", scale=1e-3)
+    Temp.fill_random("g", seed=42, distribution="normal", scale=1e-1)
     # Temp.low_pass_filter(scales=0.25)
     # Temp.high_pass_filter(scales=0.125)
     if args["--kazemi"]:
@@ -426,8 +427,10 @@ if not args["--test"]:
     with open(outpath + "run_params/runparams.json", "w") as run_file:
         run_file.write(run_params)
 
-    with open(outpath + "run_params/args.txt", "w") as file:
-        file.write(" ".join(sys.argv))
+    with open(outpath + "run_params/args.txt", "a+") as file:
+        today = datetime.today().strftime("%Y-%m-%d %H:%M:%S")
+        file.write(today)
+        file.write("python3 " + " ".join(sys.argv))
 
     # ====================
     #   2.5D DATA FIELD
