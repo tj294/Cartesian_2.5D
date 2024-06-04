@@ -428,8 +428,9 @@ if not args["--test"]:
         run_file.write(run_params)
 
     with open(outpath + "run_params/args.txt", "a+") as file:
-        today = datetime.today().strftime("%Y-%m-%d %H:%M:%S")
-        file.write(today)
+        if MPI.COMM_WORLD.rank == 0:
+            today = datetime.today().strftime("%Y-%m-%d %H:%M:%S")
+            file.write(today)
         file.write("python3 " + " ".join(sys.argv))
 
     # ====================
