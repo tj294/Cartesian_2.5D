@@ -429,9 +429,9 @@ if not args["--test"]:
 
     with open(outpath + "run_params/args.txt", "a+") as file:
         if MPI.COMM_WORLD.rank == 0:
-            today = datetime.today().strftime("%Y-%m-%d %H:%M:%S")
+            today = datetime.today().strftime("%Y-%m-%d %H:%M:%S\n\t")
             file.write(today)
-        file.write("python3 " + " ".join(sys.argv))
+            file.write("python3 " + " ".join(sys.argv) + "\n")
 
     # ====================
     #   2.5D DATA FIELD
