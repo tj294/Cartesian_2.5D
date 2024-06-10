@@ -542,8 +542,8 @@ try:
     while solver.proceed:
         timestep = CFL.compute_timestep()
         solver.step(timestep)
+        max_Re = flow.max("Re")  # Has to be outside the below if statement for restarts
         if (solver.iteration - 1) % 10 == 0:
-            max_Re = flow.max("Re")
             logger.info(
                 "Iteration=%i,\n\tTime=%e, dt=%e, max(Re)=%f"
                 % (solver.iteration - first_iter, solver.sim_time, timestep, max_Re)
@@ -557,9 +557,7 @@ except NaNFlowError:
     logger.error("Max Re is NaN or inf. Triggering end of loop")
     exit_code = -50
 except Exception as error:
-    logger.error(
-        "Unknown error {} raised. Triggering end of loop".format(type(error).__name__)
-    )
+    logger.error("Unknown error raised: {}.\n Triggering end of loop".format(error))
     exit_code = -10
 finally:
     # if not args.test:
