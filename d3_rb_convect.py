@@ -556,14 +556,16 @@ except KeyboardInterrupt:
 except NaNFlowError:
     logger.error("Max Re is NaN or inf. Triggering end of loop")
     exit_code = -50
-except:
-    logger.error("Unknown error raised. Triggering end of loop")
+except Exception as error:
+    logger.error(
+        "Unknown error {} raised. Triggering end of loop".format(type(error).__name__)
+    )
     exit_code = -10
 finally:
     # if not args.test:
     #     # logger.info("Merging outputs...")
     #     # combine_outputs.merge_files(outpath)
-    solver.evaluate_handlers_now(timestep)
+    solver.evaluate_handlers(dt=timestep)
     solver.log_stats()
     total_iterations = solver.iteration - first_iter
     snap_writes = (total_iterations) // snapshot_iter
