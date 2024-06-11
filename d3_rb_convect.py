@@ -90,24 +90,18 @@ if args["--input"]:
     restart_path = os.path.normpath(args["--input"]) + "/"
     logger.info("Reading from {}".format(restart_path))
 
-Ly = float(args["--Ly"])
-Lz = float(args["--Lz"])
-if args["--Nz"]:
-    Nz = int(args["--Nz"])
-    if args["--Ny"]:
-        Ny = int(args["--Ny"])
-    else:
-        Ny = 2 * Nz
+if args["--input"]:
+    with open(restart_path + "run_params/runparams.json", "r") as f:
+        inparams = json.load(f)
+    Ny = inparams["Ny"]
+    Nz = inparams["Nz"]
+    Ly = inparams["Ly"]
+    Lz = inparams["Lz"]
 else:
-    # ? Might never run since resolution arguments have default arguments?
-    if args["--input"]:
-        with open(restart_path + "run_params/runparams.json", "r") as f:
-            inparams = json.load(f)
-        Ny = inparams["Ny"]
-        Nz = inparams["Nz"]
-    else:
-        Ny = int(args["--Ny"])
-        Nz = int(args["--Nz"])
+    Ly = float(args["--Ly"])
+    Lz = float(args["--Lz"])
+    Ny = int(args["--Ny"])
+    Nz = int(args["--Nz"])
 
 try:
     Ra = float(args["--Ra"])
