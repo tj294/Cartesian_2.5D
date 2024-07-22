@@ -40,7 +40,7 @@ from shutil import rmtree
 from glob import glob
 
 
-def rolling_average(quantity, time, window=0.1):
+def rolling_average(quantity, time, window=0.05):
     assert len(time) == len(quantity)
     run_ave = []
     for i, t0 in enumerate(time):
