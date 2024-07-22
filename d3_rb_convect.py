@@ -22,6 +22,7 @@ Options:
     --currie                        # Run with Currie 2020 heating function
     --kazemi                        # Run with Kazemi 2022 heating function
     --Hwidth=<Hwidth>               # Width of heating zone [default: 0.2]
+    --ff                            # Use fixed-flux boundary conditions
     --slip=SLIP                     # Boundary conditions No/Free [default: free]
     --top=TOP                       # Top boundary condition [default: insulating]
     --bottom=BOTTOM                 # Bottom boundary condition [default: insulating]
@@ -150,15 +151,12 @@ logger.info(f"max_timestep = {max_timestep}")
 # ===Initialise basis===
 coords = d3.CartesianCoordinates("x", "y", "z")
 dist = d3.Distributor(coords, dtype=dtype)
-# xbasis = d3.RealFourier(coords["x"], size=2, bounds=(0, Ly), dealias=dealias)
+xbasis = d3.RealFourier(coords["x"], size=2, bounds=(0, Ly), dealias=dealias)
 ybasis = d3.RealFourier(coords["y"], size=Ny, bounds=(0, Ly), dealias=dealias)
 zbasis = d3.ChebyshevT(coords["z"], size=Nz, bounds=(0, Lz), dealias=dealias)
-# x, y, z = dist.local_grids(xbasis, ybasis, zbasis)
-y, z = dist.local_grids(ybasis, zbasis)
-# all_bases = (xbasis, ybasis, zbasis)
-all_bases = (ybasis, zbasis)
-# hor_bases = (xbasis, ybasis)
-hor_bases = ybasis
+x, y, z = dist.local_grids(xbasis, ybasis, zbasis)
+all_bases = (xbasis, ybasis, zbasis)
+hor_bases = (xbasis, ybasis)
 
 # Add fields (e.g. variables of the equations)
 # Velocity
@@ -185,15 +183,6 @@ lift = lambda A: d3.Lift(A, lift_basis, -1)  # Shortcut for multiplying by U_{N-
 uz = d3.Differentiate(u, coords["z"])
 Tz = d3.Differentiate(Temp, coords["z"])
 
-# Substitutions for 2.5D Operators (since dx(F) = 0)
-dx = lambda A: 0 * A
-dy = lambda A: d3.Differentiate(A, coords["y"])
-dz = lambda A: d3.Differentiate(A, coords["z"])
-div = lambda A: d3.div(A) + dx(x_hat @ A)
-grad = lambda A: d3.Gradient(A, coords) + x_hat * dx(A)
-lap = lambda A: d3.lap(A) + dx(dx(A))
-curl = lambda A: d3.Curl(A) - dx(A @ z_hat) * y_hat + dx(A @ y_hat) * z_hat
-
 u_x = u @ x_hat
 u_y = u @ y_hat
 u_z = u @ z_hat
@@ -203,8 +192,8 @@ dzu_x = d3.Differentiate(u_x, coords["z"])
 
 f_cond = -d3.Differentiate(Temp, coords["z"])
 f_conv = u_z * Temp
-g_operator = grad(u) - z_hat * lift(tau_u1)
-h_operator = grad(Temp) - z_hat * lift(tau_T3)
+g_operator = d3.grad(u) - z_hat * lift(tau_u1)
+h_operator = d3.grad(Temp) - z_hat * lift(tau_T3)
 F = 1
 
 # Add coriolis term
@@ -461,13 +450,13 @@ if not args["--test"]:
         parallel=parallel,
     )
     horiz_aves.add_task(
-        d3.Integrate(Temp, "y") / (Ly), name="<T>", layout="g"
+        d3.Integrate(d3.Integrate(Temp, "x"), "y") / (Ly * Ly), name="<T>", layout="g"
     )
     horiz_aves.add_task(
-        d3.Integrate(f_cond, "y") / Ly, name="<F_cond>", layout="g"
+        d3.Integrate(d3.Integrate(f_cond, "x"), "y") / Ly, name="<F_cond>", layout="g"
     )
     horiz_aves.add_task(
-        d3.Integrate(f_conv, "y") / Ly, name="<F_conv>", layout="g"
+        d3.Integrate(d3.Integrate(f_conv, "x"), "y") / Ly, name="<F_conv>", layout="g"
     )
 
     # ==================
@@ -481,27 +470,27 @@ if not args["--test"]:
         parallel=parallel,
     )
     scalars.add_task(
-        d3.Integrate(d3.Integrate(0.5 * u @ u, "y"), "z")
+        d3.Integrate(d3.Integrate(d3.Integrate(0.5 * u @ u, "y"), "z"), "x")
         / (Lz * Ly),
         name="KE",
         layout="g",
     )
     scalars.add_task(
-        d3.Integrate(d3.Integrate(np.sqrt(u @ u), "y"), "z")
+        d3.Integrate(d3.Integrate(d3.Integrate(np.sqrt(u @ u), "x"), "y"), "z")
         / (Lz * Ly),
         name="Re",
         layout="g",
     )
     scalars.add_task(
-        d3.Integrate(Temp(z=0), "y") / Ly, name="<T(0)>", layout="g"
+        d3.Integrate(d3.Integrate(Temp(z=0), "y"), "x") / Ly, name="<T(0)>", layout="g"
     )
     scalars.add_task(
-        d3.Integrate(d3.Integrate(Temp, "y"), "z") / (Ly * Lz),
+        d3.Integrate(d3.Integrate(d3.Integrate(Temp, "x"), "y"), "z") / (Ly * Lz),
         name="<<T>>",
         layout="g",
     )
     scalars.add_task(
-        d3.Integrate(d3.Integrate(f_cond + f_conv, "y"), "z")
+        d3.Integrate(d3.Integrate(d3.Integrate(f_cond + f_conv, "x"), "y"), "z")
         / (Ly * Lz),
         name="F_tot",
         layout="g",
