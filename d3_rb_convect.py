@@ -18,17 +18,17 @@ Options:
     --Nz=<Nz>                       # Vertical resolution [default: 256]
     --tau=<tau>                     # timescale [default: viscous]
     --maxdt=<maxdt>                 # Maximum timestep [default: 1e-5]
-    --stop=<stop>                   # Simulation stop time [default: 1.0]
+    --stop=<stop>                   # Simulation stop time [default: 5.0]
     --currie                        # Run with Currie 2020 heating function
     --kazemi                        # Run with Kazemi 2022 heating function
     --Hwidth=<Hwidth>               # Width of heating zone [default: 0.2]
     --ff                            # Use fixed-flux boundary conditions
     --slip=SLIP                     # Boundary conditions No/Free [default: free]
-    --top=TOP                       # Top boundary condition [default: insulating]
+    --top=TOP                       # Top boundary condition [default: vanishing]
     --bottom=BOTTOM                 # Bottom boundary condition [default: insulating]
     --snaps=<snaps>                 # Snapshot interval [default: 500]
     --horiz=<horiz>                 # Horizontal analysis interval [default: 100]
-    --scalar=<scalar>               # Scalar analysis interval [default: 1]
+    --scalar=<scalar>               # Scalar analysis interval [default: 10]
     -o OUT_PATH, --output OUT_PATH  # output file [default= ../DATA/output/]
     -i IN_PATH, --input IN_PATH     # path to read in initial conditions from
     -m=<mesh>, --mesh=<mesh>        # Processor Mesh
@@ -54,6 +54,9 @@ ncpu = MPI.COMM_WORLD.size
 # import rb_params as rp
 
 logger = logging.getLogger(__name__)
+logger.info("=========================")
+logger.info("=== NEW RUN BEGINNING ===")
+logger.info("=========================")
 
 
 class NaNFlowError(Exception):
@@ -72,13 +75,12 @@ exit_code = 0
 args = docopt(__doc__, version="2.0")
 
 mesh = args["--mesh"]
+logger.info("ncpu = {}".format(ncpu))
 if mesh is not None:
     mesh = mesh.split(",")
     mesh = [int(mesh[0]), int(mesh[1])]
-logger.info("ncpu = {}".format(ncpu))
-log2 = np.log2(ncpu)
-if log2 == int(log2):
-    mesh = [int(2 ** np.ceil(log2 / 2)), int(2 ** np.floor(log2 / 2))]
+else:
+    mesh = [int(1), int(ncpu)]
 logger.info("running on processor mesh={}".format(mesh))
 
 if not (args["--test"]):
