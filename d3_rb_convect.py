@@ -152,7 +152,7 @@ logger.info(f"max_timestep = {max_timestep}")
 
 # ===Initialise basis===
 coords = d3.CartesianCoordinates("x", "y", "z")
-dist = d3.Distributor(coords, dtype=dtype)
+dist = d3.Distributor(coords, dtype=dtype, mesh=mesh)
 xbasis = d3.RealFourier(coords["x"], size=2, bounds=(0, Ly), dealias=dealias)
 ybasis = d3.RealFourier(coords["y"], size=Ny, bounds=(0, Ly), dealias=dealias)
 zbasis = d3.ChebyshevT(coords["z"], size=Nz, bounds=(0, Lz), dealias=dealias)
