@@ -611,7 +611,7 @@ if args["--gif"]:
     mpl.ticker.Locator.MAXTICKS = 1100
     for i, t in enumerate(snap_time):
         if i % cadence == 0:
-            print(f"\t{(i+1) / len(snap_time) * 100:3.0f}% complete", end="\r")
+            print(f"\t{(i+1)} / {len(snap_time):.0f} frames", end="\r")
             fig, ax = plt.subplots()
             # cax = fig.add_axes([0.90, 0.1, 0.02, 0.8])
             # cb1 = mpl.colorbar.ColorbarBase(cax, cmap='inferno', norm=cNorm, extend='min')
