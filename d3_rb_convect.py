@@ -26,9 +26,9 @@ Options:
     --slip=SLIP                     # Boundary conditions No/Free [default: free]
     --top=TOP                       # Top boundary condition [default: vanishing]
     --bottom=BOTTOM                 # Bottom boundary condition [default: insulating]
-    --snaps=<snaps>                 # Snapshot interval [default: 500]
-    --horiz=<horiz>                 # Horizontal analysis interval [default: 100]
-    --scalar=<scalar>               # Scalar analysis interval [default: 10]
+    --snaps=<snaps>                 # Snapshot interval [default: 100]
+    --horiz=<horiz>                 # Horizontal analysis interval [default: 50]
+    --scalar=<scalar>               # Scalar analysis interval [default: 1]
     -o OUT_PATH, --output OUT_PATH  # output file [default= ../DATA/output/]
     -i IN_PATH, --input IN_PATH     # path to read in initial conditions from
     -m=<mesh>, --mesh=<mesh>        # Processor Mesh
@@ -112,7 +112,10 @@ except ValueError:
 Pr = float(args["--Pr"])
 Ta = float(args["--Ta"])
 
-logger.info(f"Ro_c = {np.sqrt(Ra / (Pr * Ta)):1.2e}")
+if Ta == 0:
+    logger.info(f"Ro_c = inf")
+else:
+    logger.info(f"Ro_c = {np.sqrt(Ra / (Pr * Ta)):1.2e}")
 
 snapshot_iter = int(args["--snaps"])
 horiz_iter = int(args["--horiz"])
