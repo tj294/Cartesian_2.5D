@@ -10,7 +10,7 @@ Usage:
 Options:
     --Ra=<Ra>                       # Rayleigh number
     --Pr=<Pr>                       # Prandtl number [default: 1]
-    --Ta=<Ta>                       # Taylor number [default: 1e-1]
+    --Ta=<Ta>                       # Taylor number [default: 0]
     --theta=<theta>                 # co-latitude of box to rotation vector [default: 5]
     --Ly=<Ly>                       # Aspect Ratio of the box [default: 4]
     --Lz=<Lz>                       # Depth of the box [default: 1]
