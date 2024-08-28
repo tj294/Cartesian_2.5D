@@ -18,6 +18,7 @@ Options:
     -h --help                       # Display this help message
     -v --version                    # Display the version
     --cadence [CADENCE]             # Cadence of the gifs [default: 1]
+    --window [WINDOW]               # Window for rolling average [default: 0.05]
     --heat-func [HEAT]              # Heat function to use if not in snapshot [default: exp]
     --ASI [TIME]                    # Sim-time to begin average [default: 0.65]
 
@@ -40,7 +41,7 @@ from shutil import rmtree
 from glob import glob
 
 
-def rolling_average(quantity, time, window=0.05):
+def rolling_average(quantity, time, window: float):
     assert len(time) == len(quantity)
     run_ave = []
     for i, t0 in enumerate(time):
@@ -352,7 +353,9 @@ if args["--info"]:
         Pr = run_params["Pr"]
         Ta = run_params["Ta"]
     with open(direc + "Nu.json", "w") as file:
-        json.dump({"Ra": Ra, "Pr": Pr, "Ta": Ta, "Nu": nu}, file, indent=4)
+        json.dump(
+            {"Ra": Ra, "Pr": Pr, "Ta": Ta, "Nu": nu, "Re": Re_ave}, file, indent=4
+        )
     print(f"Done ({timer.time() - Nu_start:.2f}s).")
 
 # # ! ============== Time-Tracks ============== ! #
@@ -369,11 +372,13 @@ if args["--time-tracks"]:
     AEI = None
     # skip_cadence = 1
 
-    KE_run_ave = rolling_average(KE[::skip_cadence], sc_time[::skip_cadence])
-    # Nu = 1 / deltaT
-    # Nu_run_ave = rolling_average(Nu[::skip_cadence], sc_time[::skip_cadence])
-    Re_run_ave = rolling_average(Re[::skip_cadence], sc_time[::skip_cadence])
-    # fig, [KE_ax, Nu_ax] = plt.subplots(2, 1, figsize=(6, 6), sharex=True)
+    KE_run_ave = rolling_average(
+        KE[::skip_cadence], sc_time[::skip_cadence], window=float(args["--window"])
+    )
+    Re_run_ave = rolling_average(
+        Re[::skip_cadence], sc_time[::skip_cadence], window=float(args["--window"])
+    )
+
     fig, KE_ax = plt.subplots(1, 1, figsize=(6, 3))
     KE_ax.plot(
         sc_time[:AEI:skip_cadence], KE_run_ave[:AEI], label="Kinetic Energy", c="r"
@@ -399,18 +404,6 @@ if args["--time-tracks"]:
     # KE_ax.set_ylim(ylims)
     KE_ax.set_xlabel(r"Time, $\tau$")
     KE_ax.set_ylabel("KE")
-
-    # Nu_ax.plot(
-    #     sc_time[:AEI:skip_cadence],
-    #     Nu_run_ave[:AEI:skip_cadence],
-    #     label="Nusselt Number",
-    #     c="r",
-    # )
-    # ylims = Nu_ax.get_ylim()
-    # Nu_ax.scatter(sc_time[:AEI:skip_cadence], Nu[:AEI:skip_cadence], marker="+", c="k")
-    # Nu_ax.set_ylim(ylims)
-    # Nu_ax.set_xlabel(r"Time, $\tau$")
-    # Nu_ax.set_ylabel("Nu")
     plt.tight_layout()
     plt.savefig(outpath + "time_tracks.pdf")
     print(f"Done ({timer.time() - time_start:.2f}s).")
@@ -611,7 +604,10 @@ if args["--gif"]:
     mpl.ticker.Locator.MAXTICKS = 1100
     for i, t in enumerate(snap_time):
         if i % cadence == 0:
-            print(f"\t{(i+1)} / {len(snap_time):.0f} frames", end="\r")
+            print(
+                f"\t{((i/cadence)+1):.0f} / {len(snap_time)/cadence:.0f} frames",
+                end="\r",
+            )
             fig, ax = plt.subplots()
             # cax = fig.add_axes([0.90, 0.1, 0.02, 0.8])
             # cb1 = mpl.colorbar.ColorbarBase(cax, cmap='inferno', norm=cNorm, extend='min')
