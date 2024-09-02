@@ -500,6 +500,46 @@ if not args["--test"]:
         name="F_tot",
         layout="g",
     )
+    scalars.add_task(
+        d3.Integrate(
+            d3.Integrate(
+                d3.Integrate(
+                    d3.Trace(d3.TransposeComponents(d3.Gradient(u)) @ d3.Gradient(u)),
+                    "x",
+                ),
+                "y",
+            ),
+            "z",
+        )
+        / (Ly * Ly * Lz),
+        name="<(grad u)^2>",
+        layout="g",
+    )
+
+    scalars.add_task(
+        Ra
+        * d3.Integrate(d3.Integrate(d3.Integrate(u_z * Temp, "x"), "y"), "z")
+        / (Ly * Ly * Lz),
+        name="Ra*<wT>",
+        layout="g",
+    )
+
+    scalars.add_task(
+        d3.Integrate(
+            d3.Integrate(d3.Integrate(d3.Gradient(Temp) @ d3.Gradient(Temp), "x"), "y"),
+            "z",
+        )
+        / (Ly * Ly * Lz),
+        name="<(grad T)>",
+        layout="g",
+    )
+
+    scalars.add_task(
+        d3.Integrate(d3.Integrate(d3.Integrate(Temp * heat, "x"), "y"), "z")
+        / (Ly * Ly * Lz),
+        name="<QT>",
+        layout="g",
+    )
 
     # analysis = solver.evaluator.add_file_handler(
     #     outpath + "analysis",
