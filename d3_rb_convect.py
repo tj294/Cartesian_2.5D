@@ -458,10 +458,14 @@ if not args["--test"]:
         d3.Integrate(d3.Integrate(Temp, "x"), "y") / (Ly * Ly), name="<T>", layout="g"
     )
     horiz_aves.add_task(
-        d3.Integrate(d3.Integrate(f_cond, "x"), "y") / Ly, name="<F_cond>", layout="g"
+        d3.Integrate(d3.Integrate(f_cond, "x"), "y") / (Ly * Ly),
+        name="<F_cond>",
+        layout="g",
     )
     horiz_aves.add_task(
-        d3.Integrate(d3.Integrate(f_conv, "x"), "y") / Ly, name="<F_conv>", layout="g"
+        d3.Integrate(d3.Integrate(f_conv, "x"), "y") / (Ly * Ly),
+        name="<F_conv>",
+        layout="g",
     )
 
     # ==================
@@ -476,27 +480,29 @@ if not args["--test"]:
     )
     scalars.add_task(
         d3.Integrate(d3.Integrate(d3.Integrate(0.5 * u @ u, "y"), "z"), "x")
-        / (Lz * Ly),
+        / (Lz * Ly * Ly),
         name="KE",
         layout="g",
     )
     scalars.add_task(
         d3.Integrate(d3.Integrate(d3.Integrate(np.sqrt(u @ u), "x"), "y"), "z")
-        / (Lz * Ly),
+        / (Lz * Ly * Ly),
         name="Re",
         layout="g",
     )
     scalars.add_task(
-        d3.Integrate(d3.Integrate(Temp(z=0), "y"), "x") / Ly, name="<T(0)>", layout="g"
+        d3.Integrate(d3.Integrate(Temp(z=0), "y"), "x") / Ly * Ly,
+        name="<T(0)>",
+        layout="g",
     )
     scalars.add_task(
-        d3.Integrate(d3.Integrate(d3.Integrate(Temp, "x"), "y"), "z") / (Ly * Lz),
+        d3.Integrate(d3.Integrate(d3.Integrate(Temp, "x"), "y"), "z") / (Ly * Ly * Lz),
         name="<<T>>",
         layout="g",
     )
     scalars.add_task(
         d3.Integrate(d3.Integrate(d3.Integrate(f_cond + f_conv, "x"), "y"), "z")
-        / (Ly * Lz),
+        / (Ly * Ly * Lz),
         name="F_tot",
         layout="g",
     )
