@@ -1,4 +1,5 @@
 """
+
 An analysis script for 2.5D Cartesian convection. The script can create gifs showing
 a heatmap of convection, as well as time-tracks of the Kinetic Energy and 1/<T>, the
 time-averaged flux balance with depth, and both the instantaneous and time-averaged
@@ -14,6 +15,8 @@ Options:
     -p --profile-dissipation        # Plot the depth profile of the dissipation
     -i --info                       # Information required
     -n --nusselt                    # Print different Nusselt Numbers
+    -s --shraiman-siggia            # Calculate the Shraiman-Siggia constant
+    -u --vel_aves                   # Plot the velocity averages
     -g --gif                        # Create a gif of the convection
     -h --help                       # Display this help message
     -v --version                    # Display the version
@@ -110,6 +113,18 @@ def get_heat_func(heat):
             raise ValueError(f"Invalid heat function {heat}")
 
         return heat_func
+
+
+def dx(field):
+    return np.zeroes_like(field)
+
+
+def dy(field):
+    return np.array(np.gradient(field, y, axis=1))
+
+
+def dz(field):
+    return np.array(np.gradient(field, z, axis=2))
 
 
 args = docopt(__doc__, version="2.0")
@@ -275,7 +290,7 @@ if args["--flux-balance"] or args["--depth-profile"] or args["--info"]:
                 if args["--flux-balance"] or args["--info"]:
                     F_cond = np.array(file["tasks"]["<F_cond>"])[:, 0, 0, :] / 4
                     F_conv = np.array(file["tasks"]["<F_conv>"])[:, 0, 0, :] / 4
-                if args["--depth-profile"]:
+                if args["--depth-profile"] or args["--info"]:
                     temp_hor = np.array(file["tasks"]["<T>"])[:, 0, 0, :] / 4
         else:
             with h5.File(h_file, "r") as file:
@@ -291,13 +306,13 @@ if args["--flux-balance"] or args["--depth-profile"] or args["--info"]:
                         (F_conv, np.array(file["tasks"]["<F_conv>"])[:, 0, 0, :] / 4),
                         axis=0,
                     )
-                if args["--depth-profile"]:
+                if args["--depth-profile"] or args["--info"]:
                     temp_hor = np.concatenate(
                         (temp_hor, np.array(file["tasks"]["<T>"])[:, 0, 0, :] / 4),
                         axis=0,
                     )
 
-if args["--gif"] or args["--profile-dissipation"]:
+if args["--gif"] or args["--profile-dissipation"] or args["--vel_aves"]:
     snap_files = glob(direc + "snapshots/snapshots_s*.h5")
     snap_files.sort(key=lambda f: int(re.sub("\D", "", f)))
     for i, s_file in enumerate(snap_files):
@@ -335,6 +350,15 @@ if args["--info"]:
     prof_AEI = get_index(horiz_time, float(2.0))
     prof_AEI = None
 
+    l = 0.1
+    beta = 1
+    a = 1 / (l * (1 - np.exp(-1 / l)))
+    T_steady = a * l * l * (np.exp(-1 / l) - 1) - (beta / 2) + a * l
+    print(T_steady)
+    temp_hor_bar = np.nanmean(temp_hor[prof_ASI:prof_AEI], axis=0)
+    print(temp_hor_bar[0])
+    KNu = T_steady / temp_hor_bar[0]
+    print(f"\t Kaz Nu = {T_steady/temp_hor_bar[0]:.3f}")
     # dT = np.nanmean(deltaT[scalar_ASI:scalar_AEI], axis=0)
     Re_ave = np.nanmean(Re[scalar_ASI:scalar_AEI], axis=0)
 
@@ -354,7 +378,9 @@ if args["--info"]:
         Ta = run_params["Ta"]
     with open(direc + "Nu.json", "w") as file:
         json.dump(
-            {"Ra": Ra, "Pr": Pr, "Ta": Ta, "Nu": nu, "Re": Re_ave}, file, indent=4
+            {"Ra": Ra, "Pr": Pr, "Ta": Ta, "Nu": nu, "KNu": KNu, "Re": Re_ave},
+            file,
+            indent=4,
         )
     print(f"Done ({timer.time() - Nu_start:.2f}s).")
 
@@ -514,16 +540,36 @@ if args["--flux-balance"]:
     F_tot_bar = np.nanmean(f_tot[ASI:AEI], axis=0)
 
     heat_func = get_heat_func(args["--heat-func"])
-    F_imp = cumtrapz(heat_func, z, initial=0)
+    F_imp = (1/Ly) * cumtrapz(heat_func, z, initial=0)
     discrepency = np.mean(np.abs(F_imp - F_tot_bar))
     print(f"F_imp - F_tot discrepency = {discrepency:.3f}")
     # F_imp *= scaling
 
+    indexes = np.asarray((np.diff(np.sign(F_cond_bar - F_conv_bar)) != 0) * 1).nonzero()
+    print(indexes)
     fig, ax = plt.subplots(1, 1, figsize=(6, 4))
     ax.plot(F_cond_bar, z, label=r"$F_{cond}$", c="b")
     ax.plot(F_conv_bar, z, label=r"$F_{conv}$", c="r")
     ax.plot(F_imp, z, label=r"$F_{imp}$", c="g")
     ax.plot(F_tot_bar, z, label=r"$F_{tot}$", c="k", ls="--")
+    if len(indexes[0]) < 2:
+        print("Not enough crossings found.")
+    else:
+        therm_bot = z[indexes[0][0]]
+        therm_top = z[indexes[0][-1]]
+        mean_therm_bl = np.mean([therm_bot, 1 - therm_top])
+        print(therm_bot, 1 - therm_top)
+        print(f"Thermal Boundary Layer = {mean_therm_bl:.3f}")
+        ax.axhspan(z[0], therm_bot, color="gray", alpha=0.5)
+        ax.axhspan(therm_top, z[-1], color="gray", alpha=0.5)
+
+        with open(direc + "therm_layer.json", "w") as file:
+            json.dump(
+                {"bot": therm_bot, "top": therm_top, "layer": mean_therm_bl},
+                file,
+                indent=4,
+            )
+
     ax.set_xlabel("Flux")
     ax.set_ylabel("z")
     plt.legend(loc="best")
@@ -641,3 +687,176 @@ if args["--gif"]:
             writer.append_data(image)
     rmtree(f"{direc}/plots")
     print(f"\nDone ({timer.time() - heatmap_start:.2f}s).")
+
+if args["--shraiman-siggia"]:
+    dir_path = normpath(args["FILE"]) + "/"
+    snap_files = sorted(glob(dir_path + "snapshots/snapshots_s*.h5"))
+    for i, snap_file in enumerate(snap_files):
+        if i == 0:
+            with h5.File(snap_file, "r") as f:
+                Temp = np.array(f["tasks"]["Temp"])[:, 0, :, :]
+                vel_field = np.array(f["tasks"]["u"])[:, :, 0, :, :]
+                t = np.array(f["tasks"]["u"].dims[0]["sim_time"])
+                y = np.array(f["tasks"]["u"].dims[3]["y"])
+                z = np.array(f["tasks"]["u"].dims[4]["z"])
+        else:
+            with h5.File(snap_file, "r") as f:
+                vel_field = np.concatenate(
+                    (vel_field, np.array(f["tasks"]["u"])[:, :, 0, :, :]), axis=0
+                )
+                Temp = np.concatenate(
+                    (Temp, np.array(f["tasks"]["Temp"])[:, 0, :, :]), axis=0
+                )
+                t = np.concatenate(
+                    (t, np.array(f["tasks"]["Temp"].dims[0]["sim_time"])), axis=0
+                )
+
+    with open(dir_path + "/run_params/runparams.json", "r") as file:
+        run_params = json.load(file)
+
+    Lz = run_params["Lz"]
+    Ly = run_params["Ly"]
+    Rf = run_params["Ra"]
+    Ta = run_params["Ta"]
+    ASI = get_index(t, float(args["--ASI"]))
+
+    del_T = np.gradient(Temp, t, y, z)
+    del_T = np.array(del_T)
+    dt_T = del_T[0, :]
+    dy_T = del_T[1, :]
+    dz_T = del_T[2, :]
+
+    del_T_sq = (dy_T) ** 2 + (dz_T) ** 2
+    hor_ave_dTsq = (1 / Ly) * np.trapz(del_T_sq, y, axis=1)
+    vol_ave_dTsq = (1 / Lz) * np.trapz(hor_ave_dTsq, z, axis=1)
+    ave_dTsq = np.nanmean(vol_ave_dTsq[ASI:], axis=0)
+    hor_bar_dTsq = np.nanmean(hor_ave_dTsq[ASI:], axis=0)
+
+    heat = get_heat_func("exp")
+    hor_ave_TQ = (1 / Ly) * np.trapz(Temp * heat, y, axis=1)
+    vol_ave_TQ = (1 / Lz) * np.trapz(hor_ave_TQ, z, axis=1)
+    ave_TQ = np.nanmean(vol_ave_TQ[ASI:], axis=0)
+    hor_bar_TQ = np.nanmean(hor_ave_TQ[ASI:], axis=0)
+
+    print(f"<(∇T)²> = {ave_dTsq:.5f}, <TQ> = {ave_TQ:.5f}")
+
+    u = vel_field[:, 0, :, :]
+    v = vel_field[:, 1, :, :]
+    w = vel_field[:, 2, :, :]
+
+    frob_ns = (
+        (dy(u)) ** 2
+        + (dy(v)) ** 2
+        + (dy(w)) ** 2
+        + (dz(u)) ** 2
+        + (dz(v)) ** 2
+        + (dz(w)) ** 2
+    )
+    hor_ave_frob = (1 / Ly) * np.trapz(frob_ns, y, axis=1)
+    vol_ave_frob = (1 / Lz) * np.trapz(hor_ave_frob, z, axis=1)
+    LHS = ave_frob_ns = np.nanmean(
+        vol_ave_frob[ASI:],
+        axis=0,
+    )
+    hor_bar_frob = np.nanmean(hor_ave_frob[ASI:], axis=0)
+
+    hor_ave_wT = (1 / Ly) * np.trapz(w * Temp, y, axis=1)
+    vol_ave_wT = (1 / Lz) * np.trapz(hor_ave_wT, z, axis=1)
+    ave_wT = np.nanmean(vol_ave_wT[ASI:], axis=0)
+    hor_bar_wT = np.nanmean(hor_ave_wT[ASI:], axis=0)
+
+    RHS = Rf * ave_wT
+
+    print(f"<(∇u)²> = {ave_frob_ns:e}, Rf * <wT> = {Rf:.1e} * {ave_wT:.5f} = {RHS:e}")
+
+    with open(dir_path + "shraiman_siggia.json", "w") as file:
+        json.dump(
+            {
+                "Rf": Rf,
+                "Ta": Ta,
+                "gradT_sq": ave_dTsq,
+                "TQ": ave_TQ,
+                "gradu_sq": ave_frob_ns,
+                "RfwT": RHS,
+            },
+            file,
+            indent=4,
+        )
+
+    fig, [therm_ax, visc_ax] = plt.subplots(1, 2, figsize=(6, 4))
+    therm_ax.plot(hor_bar_dTsq, z, label=r"$\langle (\nabla T)^2 \rangle_H$")
+    therm_ax.plot(hor_bar_TQ, z, label=r"$\langle TQ \rangle_H$")
+    therm_ax.set_xlabel(r"$\epsilon_T$")
+    therm_ax.set_ylabel("z")
+    therm_ax.legend()
+
+    visc_ax.plot(hor_bar_frob, z, label=r"$\langle (\nabla u)^2 \rangle_H$")
+    visc_ax.plot(Rf * hor_bar_wT, z, label=r"$R_f \cdot \langle wT \rangle_H$")
+    visc_ax.set_xlabel(r"$\epsilon_U$")
+    visc_ax.set_ylabel("z")
+    visc_ax.legend()
+    fig.suptitle(f"Ta = {Ta:.0e}, Rf = {Rf:.1e}")
+    plt.tight_layout()
+    plt.savefig(outpath + "diss_profiles.pdf")
+
+
+if args["--vel_aves"]:
+    u = vel[:, 0, :, :]
+    v = vel[:, 1, :, :]
+    w = vel[:, 2, :, :]
+
+    u_hor = np.trapz(
+        u,
+        y,
+        axis=1,
+    )
+    v_hor = np.trapz(
+        v,
+        y,
+        axis=1,
+    )
+    w_hor = np.trapz(
+        w,
+        y,
+        axis=1,
+    )
+
+    ASI = get_index(snap_time, float(args["--ASI"]))
+
+    u_ave = np.nanmean(u_hor[ASI:], axis=0)
+    v_ave = np.nanmean(v_hor[ASI:], axis=0)
+    w_ave = np.nanmean(w_hor[ASI:], axis=0)
+
+    zt, tz = np.meshgrid(z, snap_time[ASI:])
+
+    print(u_hor.shape)
+
+    fig, ax = plt.subplots(1, 1, figsize=(6, 4))
+    c = ax.contourf(tz, zt, u_hor[ASI:, :], cmap="RdBu_r", levels=100)
+    ax2 = ax.twiny()
+    ax2.plot(u_ave, z, c="k")
+    ax.set_xlabel(r"$\tau_\nu$")
+    ax.set_ylabel("z")
+    ax.set_title(r"$\langle u \rangle_H$")
+    fig.colorbar(c, ax=ax)
+    fig.savefig(outpath + "u_aves.pdf")
+
+    fig, ax = plt.subplots(1, 1, figsize=(6, 4))
+    c = ax.contourf(tz, zt, v_hor[ASI:, :], cmap="RdBu_r", levels=100)
+    ax2 = ax.twiny()
+    ax2.plot(v_ave, z, c="k")
+    ax.set_xlabel(r"$\tau_\nu$")
+    ax.set_ylabel("z")
+    ax.set_title(r"$\langle v \rangle_H$")
+    fig.colorbar(c, ax=ax)
+    fig.savefig(outpath + "v_aves.pdf")
+
+    fig, ax = plt.subplots(1, 1, figsize=(6, 4))
+    c = ax.contourf(tz, zt, w_hor[ASI:, :], cmap="RdBu_r", levels=100)
+    ax2 = ax.twiny()
+    ax2.plot(w_ave, z, c="k")
+    ax.set_xlabel(r"$\tau_\nu$")
+    ax.set_ylabel("z")
+    ax.set_title(r"$\langle w \rangle_H$")
+    fig.colorbar(c, ax=ax)
+    fig.savefig(outpath + "w_aves.pdf")
