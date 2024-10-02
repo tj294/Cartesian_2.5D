@@ -24,6 +24,7 @@ Options:
     --window [WINDOW]               # Window for rolling average [default: 0.05]
     --heat-func [HEAT]              # Heat function to use if not in snapshot [default: exp]
     --ASI [TIME]                    # Sim-time to begin average [default: 0.65]
+    --AD [DURATION]                 # Time average duration [default: 2.0]
 
 """
 
@@ -208,18 +209,21 @@ if args["--nusselt"]:
                 )
 
     scalar_ASI = get_index(sc_time, float(args["--ASI"]))
+    scalar_AEI = get_index(sc_time, float(args["--ASI"]) + float(args["--AD"]))
     snap_ASI = get_index(snap_time, float(args["--ASI"]))
+    snap_AEI = get_index(snap_time, float(args["--ASI"]) + float(args["--AD"]))
     prof_ASI = get_index(prof_time, float(args["--ASI"]))
+    prof_AEI = get_index(prof_time, float(args["--ASI"]) + float(args["--AD"]))
 
     inv_t0 = 1 / T_0
-    inv_t0_ave = np.nanmean(inv_t0[scalar_ASI:], axis=0)
+    inv_t0_ave = np.nanmean(inv_t0[scalar_ASI:scalar_AEI], axis=0)
     print(f"\t1/<T(z=0)> =\t\t{inv_t0_ave:.5f}")
 
     # F_cond_ave = np.nanmean(F_cond, axis=1)
     # F_conv_ave = np.nanmean(F_conv, axis=1)
 
-    F_cond_bar = np.nanmean(F_cond[prof_ASI:, :], axis=0)
-    F_conv_bar = np.nanmean(F_conv[prof_ASI:, :], axis=0)
+    F_cond_bar = np.nanmean(F_cond[prof_ASI:prof_AEI, :], axis=0)
+    F_conv_bar = np.nanmean(F_conv[prof_ASI:prof_AEI, :], axis=0)
     F_cond_ave = np.trapz(F_cond_bar, z, axis=0)
     F_conv_ave = np.trapz(F_conv_bar, z, axis=0)
     flux_nu_ave = 1 + (F_conv_ave / F_cond_ave)
@@ -227,10 +231,10 @@ if args["--nusselt"]:
     print(f"\t1 + F_conv/F_cond =\t{flux_nu_ave:.5f}")
 
     inv_delta_T = 1 / (max_T - min_T)
-    inv_delta_T_ave = np.nanmean(inv_delta_T[snap_ASI:], axis=0)
+    inv_delta_T_ave = np.nanmean(inv_delta_T[snap_ASI:snap_AEI], axis=0)
     print(f"\t1/dT = \t\t\t{inv_delta_T_ave:.5f}")
     print(
-        f"\t\t T_max = {np.nanmean(max_T[snap_ASI:]):.5f}, T_min = {np.nanmean(min_T[snap_ASI:]):.5f}"
+        f"\t\t T_max = {np.nanmean(max_T[snap_ASI:snap_AEI]):.5f}, T_min = {np.nanmean(min_T[snap_ASI:snap_AEI]):.5f}"
     )
 
     with open(direc + "run_params/runparams.json", "r") as file:
@@ -343,12 +347,10 @@ if args["--info"]:
     print("====== Nusselt Number ======")
     Nu_start = timer.time()
     scalar_ASI = get_index(sc_time, float(args["--ASI"]))
-    scalar_AEI = get_index(sc_time, float(2.0))
-    scalar_AEI = None
+    scalar_AEI = get_index(sc_time, float(args["--ASI"]) + float(args["--AD"]))
 
     prof_ASI = get_index(horiz_time, float(args["--ASI"]))
-    prof_AEI = get_index(horiz_time, float(2.0))
-    prof_AEI = None
+    prof_AEI = get_index(horiz_time, float(args["--ASI"]) + float(args["--AD"]))
 
     l = 0.1
     beta = 1
@@ -394,8 +396,7 @@ if args["--time-tracks"]:
         skip_cadence = 10
     else:
         skip_cadence = 1
-    AEI = get_index(sc_time, float(1.9))
-    AEI = None
+    AEI = get_index(sc_time, float(args["--ASI"]) + float(args["--AD"]))
     # skip_cadence = 1
 
     KE_run_ave = rolling_average(
@@ -406,27 +407,29 @@ if args["--time-tracks"]:
     )
 
     fig, KE_ax = plt.subplots(1, 1, figsize=(6, 3))
+
     KE_ax.plot(
-        sc_time[:AEI:skip_cadence], KE_run_ave[:AEI], label="Kinetic Energy", c="r"
+        sc_time[::skip_cadence],
+        KE_run_ave[::],
+        label="Kinetic Energy",
+        c="r",
     )
 
     RE_ax = KE_ax.twinx()
     RE_ax.scatter(
-        sc_time[:AEI:skip_cadence],
-        Re[:AEI:skip_cadence],
+        sc_time[::skip_cadence],
+        Re[::skip_cadence],
         marker="+",
         c="cyan",
         alpha=0.5,
     )
-    RE_ax.plot(
-        sc_time[:AEI:skip_cadence], Re_run_ave[:AEI], label="Reynolds Number", c="b"
-    )
+    RE_ax.plot(sc_time[::skip_cadence], Re_run_ave[:], label="Reynolds Number", c="b")
     # RE_ax.set_ylabel("Re")
     RE_ax.set_ylabel("Re", color="blue")
     RE_ax.tick_params(axis="y", labelcolor="blue")
 
     ylims = KE_ax.get_ylim()
-    KE_ax.scatter(sc_time[:AEI:skip_cadence], KE[:AEI:skip_cadence], marker="+", c="k")
+    KE_ax.scatter(sc_time[::skip_cadence], KE[::skip_cadence], marker="+", c="k")
     # KE_ax.set_ylim(ylims)
     KE_ax.set_xlabel(r"Time, $\tau$")
     KE_ax.set_ylabel("KE")
@@ -440,6 +443,7 @@ if args["--profile-dissipation"]:
     diss_start = timer.time()
 
     ASI = get_index(snap_time, float(args["--ASI"]))
+    AEI = get_index(snap_time, float(args["--ASI"]) + float(args["--AD"]))
 
     u = vel[:, 0, :, :]
     v = vel[:, 1, :, :]
@@ -462,8 +466,12 @@ if args["--profile-dissipation"]:
     viscous_prof_inst = np.trapz(viscous_diss, x=y, axis=1)
     thermal_prof_inst = np.trapz(thermal_diss, x=y, axis=1)
 
-    viscous_prof_ave = np.trapz(viscous_prof_inst[ASI:], x=snap_time[ASI:], axis=0)
-    thermal_prof_ave = np.trapz(thermal_prof_inst[ASI:], x=snap_time[ASI:], axis=0)
+    viscous_prof_ave = np.trapz(
+        viscous_prof_inst[ASI:AEI], x=snap_time[ASI:AEI], axis=0
+    )
+    thermal_prof_ave = np.trapz(
+        thermal_prof_inst[ASI:AEI], x=snap_time[ASI:AEI], axis=0
+    )
 
     viscous_diss_all = np.trapz(viscous_prof_ave, x=z)
     thermal_diss_all = np.trapz(thermal_prof_ave, x=z)
@@ -528,19 +536,18 @@ if args["--flux-balance"]:
     #         params = json.load(file)
     #         driving_flux = params['F']
     ASI = get_index(horiz_time, float(args["--ASI"]))
-    # AEI = get_index(horiz_time, float(2.0))
+    AEI = get_index(horiz_time, float(args["--ASI"]) + float(args["--AD"]))
     with open(direc + "run_params/runparams.json", "r") as file:
         params = json.load(file)
         Ly = params["Ly"]
 
-    AEI = None
     f_tot = F_cond + F_conv
     F_cond_bar = np.nanmean(F_cond[ASI:AEI], axis=0)
     F_conv_bar = np.nanmean(F_conv[ASI:AEI], axis=0)
     F_tot_bar = np.nanmean(f_tot[ASI:AEI], axis=0)
 
     heat_func = get_heat_func(args["--heat-func"])
-    F_imp = (1/Ly) * cumtrapz(heat_func, z, initial=0)
+    F_imp = (1 / Ly) * cumtrapz(heat_func, z, initial=0)
     discrepency = np.mean(np.abs(F_imp - F_tot_bar))
     print(f"F_imp - F_tot discrepency = {discrepency:.3f}")
     # F_imp *= scaling
@@ -583,7 +590,8 @@ if args["--depth-profile"]:
     print("====== Depth Profile ======")
     depth_start = timer.time()
     ASI = get_index(horiz_time, float(args["--ASI"]))
-    temp_hor_bar = np.nanmean(temp_hor[ASI:], axis=0)
+    AEI = get_index(horiz_time, float(args["--ASI"]) + float(args["--AD"]))
+    temp_hor_bar = np.nanmean(temp_hor[ASI:AEI], axis=0)
 
     fig, ax = plt.subplots(1, 1, figsize=(6, 4))
     ax.plot(temp_hor_bar, z, c="k")
@@ -719,6 +727,7 @@ if args["--shraiman-siggia"]:
     Rf = run_params["Ra"]
     Ta = run_params["Ta"]
     ASI = get_index(t, float(args["--ASI"]))
+    AEI = get_index(t, float(args["--ASI"]) + float(args["--AD"]))
 
     del_T = np.gradient(Temp, t, y, z)
     del_T = np.array(del_T)
@@ -729,14 +738,14 @@ if args["--shraiman-siggia"]:
     del_T_sq = (dy_T) ** 2 + (dz_T) ** 2
     hor_ave_dTsq = (1 / Ly) * np.trapz(del_T_sq, y, axis=1)
     vol_ave_dTsq = (1 / Lz) * np.trapz(hor_ave_dTsq, z, axis=1)
-    ave_dTsq = np.nanmean(vol_ave_dTsq[ASI:], axis=0)
-    hor_bar_dTsq = np.nanmean(hor_ave_dTsq[ASI:], axis=0)
+    ave_dTsq = np.nanmean(vol_ave_dTsq[ASI:AEI], axis=0)
+    hor_bar_dTsq = np.nanmean(hor_ave_dTsq[ASI:AEI], axis=0)
 
     heat = get_heat_func("exp")
     hor_ave_TQ = (1 / Ly) * np.trapz(Temp * heat, y, axis=1)
     vol_ave_TQ = (1 / Lz) * np.trapz(hor_ave_TQ, z, axis=1)
-    ave_TQ = np.nanmean(vol_ave_TQ[ASI:], axis=0)
-    hor_bar_TQ = np.nanmean(hor_ave_TQ[ASI:], axis=0)
+    ave_TQ = np.nanmean(vol_ave_TQ[ASI:AEI], axis=0)
+    hor_bar_TQ = np.nanmean(hor_ave_TQ[ASI:AEI], axis=0)
 
     print(f"<(∇T)²> = {ave_dTsq:.5f}, <TQ> = {ave_TQ:.5f}")
 
@@ -755,15 +764,15 @@ if args["--shraiman-siggia"]:
     hor_ave_frob = (1 / Ly) * np.trapz(frob_ns, y, axis=1)
     vol_ave_frob = (1 / Lz) * np.trapz(hor_ave_frob, z, axis=1)
     LHS = ave_frob_ns = np.nanmean(
-        vol_ave_frob[ASI:],
+        vol_ave_frob[ASI:AEI],
         axis=0,
     )
-    hor_bar_frob = np.nanmean(hor_ave_frob[ASI:], axis=0)
+    hor_bar_frob = np.nanmean(hor_ave_frob[ASI:AEI], axis=0)
 
     hor_ave_wT = (1 / Ly) * np.trapz(w * Temp, y, axis=1)
     vol_ave_wT = (1 / Lz) * np.trapz(hor_ave_wT, z, axis=1)
-    ave_wT = np.nanmean(vol_ave_wT[ASI:], axis=0)
-    hor_bar_wT = np.nanmean(hor_ave_wT[ASI:], axis=0)
+    ave_wT = np.nanmean(vol_ave_wT[ASI:AEI], axis=0)
+    hor_bar_wT = np.nanmean(hor_ave_wT[ASI:AEI], axis=0)
 
     RHS = Rf * ave_wT
 
@@ -822,17 +831,18 @@ if args["--vel_aves"]:
     )
 
     ASI = get_index(snap_time, float(args["--ASI"]))
+    AEI = get_index(snap_time, float(args["--ASI"]) + float(args["--AD"]))
 
-    u_ave = np.nanmean(u_hor[ASI:], axis=0)
-    v_ave = np.nanmean(v_hor[ASI:], axis=0)
-    w_ave = np.nanmean(w_hor[ASI:], axis=0)
+    u_ave = np.nanmean(u_hor[ASI:AEI], axis=0)
+    v_ave = np.nanmean(v_hor[ASI:AEI], axis=0)
+    w_ave = np.nanmean(w_hor[ASI:AEI], axis=0)
 
-    zt, tz = np.meshgrid(z, snap_time[ASI:])
+    zt, tz = np.meshgrid(z, snap_time[ASI:AEI])
 
     print(u_hor.shape)
 
     fig, ax = plt.subplots(1, 1, figsize=(6, 4))
-    c = ax.contourf(tz, zt, u_hor[ASI:, :], cmap="RdBu_r", levels=100)
+    c = ax.contourf(tz, zt, u_hor[ASI:AEI, :], cmap="RdBu_r", levels=100)
     ax2 = ax.twiny()
     ax2.plot(u_ave, z, c="k")
     ax.set_xlabel(r"$\tau_\nu$")
@@ -842,7 +852,7 @@ if args["--vel_aves"]:
     fig.savefig(outpath + "u_aves.pdf")
 
     fig, ax = plt.subplots(1, 1, figsize=(6, 4))
-    c = ax.contourf(tz, zt, v_hor[ASI:, :], cmap="RdBu_r", levels=100)
+    c = ax.contourf(tz, zt, v_hor[ASI:AEI, :], cmap="RdBu_r", levels=100)
     ax2 = ax.twiny()
     ax2.plot(v_ave, z, c="k")
     ax.set_xlabel(r"$\tau_\nu$")
@@ -852,7 +862,7 @@ if args["--vel_aves"]:
     fig.savefig(outpath + "v_aves.pdf")
 
     fig, ax = plt.subplots(1, 1, figsize=(6, 4))
-    c = ax.contourf(tz, zt, w_hor[ASI:, :], cmap="RdBu_r", levels=100)
+    c = ax.contourf(tz, zt, w_hor[ASI:AEI, :], cmap="RdBu_r", levels=100)
     ax2 = ax.twiny()
     ax2.plot(w_ave, z, c="k")
     ax.set_xlabel(r"$\tau_\nu$")
