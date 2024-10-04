@@ -15,8 +15,10 @@ Options:
     -p --profile-dissipation        # Plot the depth profile of the dissipation
     -i --info                       # Information required
     -n --nusselt                    # Print different Nusselt Numbers
+    -l --last-frames                # Plot the last 30 frames of the simulation
     -s --shraiman-siggia            # Calculate the Shraiman-Siggia constant
     -u --vel_aves                   # Plot the velocity averages
+    -a --anisotropy                 # Calculate the anisotropy of the flow
     -g --gif                        # Create a gif of the convection
     -h --help                       # Display this help message
     -v --version                    # Display the version
@@ -25,13 +27,14 @@ Options:
     --heat-func [HEAT]              # Heat function to use if not in snapshot [default: exp]
     --ASI [TIME]                    # Sim-time to begin average [default: 0.65]
     --AD [DURATION]                 # Time average duration [default: 2.0]
+    --no-prefactor                  # Don't use the prefactor for the flux balance [default: True]
 
 """
 
 from docopt import docopt
 import h5py as h5
 import numpy as np
-from scipy.integrate import cumtrapz
+from scipy.integrate import cumtrapz, trapezoid
 import re
 import time as timer
 import matplotlib.pyplot as plt
@@ -132,14 +135,12 @@ args = docopt(__doc__, version="2.0")
 print(args)
 
 direc = normpath(args["FILE"]) + "/"
-
 if not glob(direc):
     raise FileNotFoundError("Directory does not exist")
-
 outpath = direc + "images/"
 makedirs(outpath, exist_ok=True)
-
 start_time = timer.time()
+
 print("====== Data Read-In ======")
 if args["--nusselt"]:
     scalar_files = glob(direc + "scalars/scalars_s*.h5")
@@ -253,6 +254,7 @@ if args["--nusselt"]:
             indent=4,
         )
 
+# ! ============== Scalar Load ============== ! #
 if args["--info"] or args["--time-tracks"]:
     scalar_files = glob(direc + "scalars/scalars_s*.h5")
     scalar_files.sort(key=lambda f: int(re.sub("\D", "", f)))
@@ -281,6 +283,8 @@ if args["--info"] or args["--time-tracks"]:
                         (KE, np.array(file["tasks"]["KE"])[:, 0, 0, 0]), axis=0
                     )
     # print(sc_time)
+
+# ! ============== Profile Load ============== ! #
 if args["--flux-balance"] or args["--depth-profile"] or args["--info"]:
     horiz_files = glob(direc + "horiz_aves/horiz_aves_s*.h5")
     horiz_files.sort(
@@ -316,7 +320,13 @@ if args["--flux-balance"] or args["--depth-profile"] or args["--info"]:
                         axis=0,
                     )
 
-if args["--gif"] or args["--profile-dissipation"] or args["--vel_aves"]:
+# ! ============== Snapshot Load ============== ! #
+if (
+    args["--gif"]
+    or args["--profile-dissipation"]
+    or args["--vel_aves"]
+    or args["--anisotropy"]
+):
     snap_files = glob(direc + "snapshots/snapshots_s*.h5")
     snap_files.sort(key=lambda f: int(re.sub("\D", "", f)))
     for i, s_file in enumerate(snap_files):
@@ -324,7 +334,11 @@ if args["--gif"] or args["--profile-dissipation"] or args["--vel_aves"]:
             with h5.File(s_file, "r") as file:
                 snap_time = np.array(file["scales"]["sim_time"])
                 temp = np.array(file["tasks"]["Temp"])[:, 0, :, :]
-                vel = np.array(file["tasks"]["u"])[:, :, 0, :, :]
+                if args["--anisotropy"]:
+                    vel = np.array(file["tasks"]["u"])[:, :, :, :, :]
+                else:
+                    vel = np.array(file["tasks"]["u"])[:, :, 0, :, :]
+                x = np.array(file["tasks"]["Temp"].dims[1]["x"])
                 y = np.array(file["tasks"]["Temp"].dims[2]["y"])
                 z = np.array(file["tasks"]["Temp"].dims[3]["z"])
         else:
@@ -335,9 +349,14 @@ if args["--gif"] or args["--profile-dissipation"] or args["--vel_aves"]:
                 temp = np.concatenate(
                     (temp, np.array(file["tasks"]["Temp"])[:, 0, :, :]), axis=0
                 )
-                vel = np.concatenate(
-                    (vel, np.array(file["tasks"]["u"])[:, :, 0, :, :]), axis=0
-                )
+                if args["--anisotropy"]:
+                    vel = np.concatenate(
+                        (vel, np.array(file["tasks"]["u"])[:, :, :, :, :]), axis=0
+                    )
+                else:
+                    vel = np.concatenate(
+                        (vel, np.array(file["tasks"]["u"])[:, :, 0, :, :]), axis=0
+                    )
 
 
 read_finish = timer.time() - start_time
@@ -541,13 +560,15 @@ if args["--flux-balance"]:
         params = json.load(file)
         Ly = params["Ly"]
 
+    not_prefactor = args["--no-prefactor"]
+
     f_tot = F_cond + F_conv
     F_cond_bar = np.nanmean(F_cond[ASI:AEI], axis=0)
     F_conv_bar = np.nanmean(F_conv[ASI:AEI], axis=0)
     F_tot_bar = np.nanmean(f_tot[ASI:AEI], axis=0)
-
+    a = 1 if not_prefactor else 1 / Ly
     heat_func = get_heat_func(args["--heat-func"])
-    F_imp = (1 / Ly) * cumtrapz(heat_func, z, initial=0)
+    F_imp = a * cumtrapz(heat_func, z, initial=0)
     discrepency = np.mean(np.abs(F_imp - F_tot_bar))
     print(f"F_imp - F_tot discrepency = {discrepency:.3f}")
     # F_imp *= scaling
@@ -629,6 +650,7 @@ if args["--depth-profile"]:
     rmtree(f"{direc}/plots")
     print(f"\nDone ({timer.time() - depth_start:.2f}s).")
 
+# # ! ============== Heatmap Gif ============== ! #
 if args["--gif"]:
     print("====== Heatmap GIF ======")
     heatmap_start = timer.time()
@@ -696,6 +718,7 @@ if args["--gif"]:
     rmtree(f"{direc}/plots")
     print(f"\nDone ({timer.time() - heatmap_start:.2f}s).")
 
+# # ! ============== Shraiman-Siggia ============== ! #
 if args["--shraiman-siggia"]:
     dir_path = normpath(args["FILE"]) + "/"
     snap_files = sorted(glob(dir_path + "snapshots/snapshots_s*.h5"))
@@ -808,7 +831,7 @@ if args["--shraiman-siggia"]:
     plt.tight_layout()
     plt.savefig(outpath + "diss_profiles.pdf")
 
-
+# # ! ============== Velocity Averages ============== ! #
 if args["--vel_aves"]:
     u = vel[:, 0, :, :]
     v = vel[:, 1, :, :]
@@ -870,3 +893,188 @@ if args["--vel_aves"]:
     ax.set_title(r"$\langle w \rangle_H$")
     fig.colorbar(c, ax=ax)
     fig.savefig(outpath + "w_aves.pdf")
+
+# # ! ============== Anisotropy ============== ! #
+if args["--anisotropy"]:
+    dir_path = normpath(args["FILE"]) + "/"
+    u = vel[:, 0, :, :, :]
+    v = vel[:, 1, :, :, :]
+    w = vel[:, 2, :, :, :]
+    ASI = get_index(snap_time, float(args["--ASI"]))
+    AEI = get_index(snap_time, float(args["--ASI"]) + float(args["--AD"]))
+
+    u_rms = np.nanmean(
+        np.sqrt(
+            trapezoid(
+                trapezoid(trapezoid(u * u, x=x, axis=1) ** 2, x=y, axis=1), x=z, axis=1
+            )
+        )[ASI:],
+        axis=0,
+    )
+    u_xrms = np.nanmean(
+        np.sqrt(
+            trapezoid(
+                trapezoid(trapezoid(u, x=x, axis=1) ** 2, x=y, axis=1), x=z, axis=1
+            )
+        )[ASI:],
+        axis=0,
+    )
+    u_yrms = np.nanmean(
+        np.sqrt(
+            trapezoid(
+                trapezoid(trapezoid(u, x=y, axis=2) ** 2, x=x, axis=1), x=z, axis=1
+            )
+        )[ASI:],
+        axis=0,
+    )
+    u_zrms = np.nanmean(
+        np.sqrt(
+            trapezoid(
+                trapezoid(trapezoid(u, x=z, axis=3) ** 2, x=x, axis=1), x=y, axis=1
+            )
+        )[ASI:],
+        axis=0,
+    )
+
+    v_rms = np.nanmean(
+        np.sqrt(
+            trapezoid(
+                trapezoid(trapezoid(v * v, x=x, axis=1) ** 2, x=y, axis=1), x=z, axis=1
+            )
+        )[ASI:],
+        axis=0,
+    )
+    v_xrms = np.nanmean(
+        np.sqrt(
+            trapezoid(
+                trapezoid(trapezoid(v, x=x, axis=1) ** 2, x=y, axis=1), x=z, axis=1
+            )
+        )[ASI:],
+        axis=0,
+    )
+    v_yrms = np.nanmean(
+        np.sqrt(
+            trapezoid(
+                trapezoid(trapezoid(v, x=y, axis=2) ** 2, x=x, axis=1), x=z, axis=1
+            )
+        )[ASI:],
+        axis=0,
+    )
+    v_zrms = np.nanmean(
+        np.sqrt(
+            trapezoid(
+                trapezoid(trapezoid(v, x=z, axis=3) ** 2, x=x, axis=1), x=y, axis=1
+            )
+        )[ASI:],
+        axis=0,
+    )
+
+    w_rms = np.nanmean(
+        np.sqrt(
+            trapezoid(
+                trapezoid(trapezoid(w * w, x=x, axis=1) ** 2, x=y, axis=1), x=z, axis=1
+            )
+        )[ASI:],
+        axis=0,
+    )
+    w_xrms = np.nanmean(
+        np.sqrt(
+            trapezoid(
+                trapezoid(trapezoid(w, x=x, axis=1) ** 2, x=y, axis=1), x=z, axis=1
+            )
+        )[ASI:],
+        axis=0,
+    )
+    w_yrms = np.nanmean(
+        np.sqrt(
+            trapezoid(
+                trapezoid(trapezoid(w, x=y, axis=2) ** 2, x=x, axis=1), x=z, axis=1
+            )
+        )[ASI:],
+        axis=0,
+    )
+    w_zrms = np.nanmean(
+        np.sqrt(
+            trapezoid(
+                trapezoid(trapezoid(w, x=z, axis=3) ** 2, x=x, axis=1), x=y, axis=1
+            )
+        )[ASI:],
+        axis=0,
+    )
+
+    anisotropy = (u_rms - v_rms) / (u_rms + v_rms)
+    print(anisotropy)
+
+    with open(dir_path + "anisotropy.json", "w") as file:
+        json.dump(
+            {
+                "u_rms": u_rms,
+                "v_rms": v_rms,
+                "w_rms": w_rms,
+                "u_xrms": u_xrms,
+                "v_xrms": v_xrms,
+                "w_xrms": w_xrms,
+                "u_yrms": u_yrms,
+                "v_yrms": v_yrms,
+                "w_yrms": w_yrms,
+                "u_zrms": u_zrms,
+                "v_zrms": v_zrms,
+                "w_zrms": w_zrms,
+                "anisotropy": anisotropy,
+            },
+            file,
+            indent=4,
+        )
+
+# # ! ============== Last Frames ============== ! #
+if args["--last-frames"]:
+    print("==== Last Frames ====")
+    dir_path = normpath(args["FILE"]) + "/"
+    snap_files = sorted(glob(dir_path + "snapshots/snapshots_s*.h5"))
+    print("Reading...")
+    with h5.File(snap_files[-1], "r") as f:
+        Temp = np.array(f["tasks"]["Temp"])[-30:, 0, :, :]
+        vel_field = np.array(f["tasks"]["u"])[-30:, :, 0, :, :]
+        t = np.array(f["tasks"]["u"].dims[0]["sim_time"])[-30:]
+        y = np.array(f["tasks"]["u"].dims[3]["y"])
+        z = np.array(f["tasks"]["u"].dims[4]["z"])
+
+    zz, yy = np.meshgrid(z, y)
+    yspace = len(y) // 15
+    zspace = len(z) // 5
+    fnames = []
+    makedirs(f"{dir_path}plots", exist_ok=True)
+    makedirs(f"{dir_path}images", exist_ok=True)
+    print("Plotting Frames...")
+    for i, f in enumerate(t):
+        fig, ax = plt.subplots(figsize=(8, 4))
+        cax = ax.contourf(
+            yy,
+            zz,
+            Temp[i, :, :],
+            cmap="inferno",
+            levels=100,
+            extend="min",
+        )
+        # ax.quiver(
+        #     yy[::yspace, ::zspace],
+        #     zz[::yspace, ::zspace],
+        #     vel_field[i, 1, ::yspace, ::zspace],
+        #     vel_field[i, 2, ::yspace, ::zspace],
+        #     color="w",
+        #     pivot="mid",
+        # )
+        ax.set_xlabel("y")
+        ax.set_ylabel("z")
+        ax.set_title(f"t = {f:.2f}")
+        fig.colorbar(cax, label=r"$T$")
+        fnames.append(f"{dir_path}plots/{i:04d}.png")
+        plt.savefig(fnames[-1])
+        plt.close()
+    print("Creating GIF...")
+    with imageio.get_writer(f"{dir_path}images/last_frames.gif", mode="I") as writer:
+        for i, filename in enumerate(fnames):
+            print(f"\t frame {i+1}/{len(fnames)}", end="\r")
+            image = imageio.imread(filename)
+            writer.append_data(image)
+    rmtree(f"{dir_path}plots")
