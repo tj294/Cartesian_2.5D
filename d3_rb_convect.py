@@ -23,7 +23,7 @@ Options:
     --kazemi                        # Run with Kazemi 2022 heating function
     --Hwidth=<Hwidth>               # Width of heating zone [default: 0.2]
     --ff                            # Use fixed-flux boundary conditions
-    --slip=SLIP                     # Boundary conditions No/Free [default: free]
+    --slip=SLIP                     # Slip conditions No/Free [default: free]
     --top=TOP                       # Top boundary condition [default: vanishing]
     --bottom=BOTTOM                 # Bottom boundary condition [default: insulating]
     --snaps=<snaps>                 # Snapshot interval [default: 100]
@@ -454,19 +454,22 @@ if not args["--test"]:
         mode=fh_mode,
         parallel=parallel,
     )
-    horiz_aves.add_task(
-        d3.Integrate(d3.Integrate(Temp, "x"), "y") / (Ly * Ly), name="<T>", layout="g"
-    )
-    horiz_aves.add_task(
-        d3.Integrate(d3.Integrate(f_cond, "x"), "y") / (Ly * Ly),
-        name="<F_cond>",
-        layout="g",
-    )
-    horiz_aves.add_task(
-        d3.Integrate(d3.Integrate(f_conv, "x"), "y") / (Ly * Ly),
-        name="<F_conv>",
-        layout="g",
-    )
+    # horiz_aves.add_task(
+    #     d3.Integrate(d3.Integrate(Temp, "x"), "y") / (Ly * Ly), name="<T>", layout="g"
+    # )
+    horiz_aves.add_task(d3.Average(Temp, ("x", "y")), name="<T>", layout="g")
+    # horiz_aves.add_task(
+    #     d3.Integrate(d3.Integrate(f_cond, "x"), "y") / (Ly * Ly),
+    #     name="<F_cond>",
+    #     layout="g",
+    # )
+    horiz_aves.add_task(d3.Average(f_cond, ("x", "y")), name="<F_cond>", layout="g")
+    # horiz_aves.add_task(
+    #     d3.Integrate(d3.Integrate(f_conv, "x"), "y") / (Ly * Ly),
+    #     name="<F_conv>",
+    #     layout="g",
+    # )
+    horiz_aves.add_task(d3.Average(f_conv, ("x", "y")), name="<F_conv>", layout="g")
 
     # ==================
     #      SCALARS
@@ -478,89 +481,39 @@ if not args["--test"]:
         mode=fh_mode,
         parallel=parallel,
     )
+
+    scalars.add_task(d3.Average(0.5 * u @ u, ("x", "y", "z")), name="KE", layout="g")
+
+    scalars.add_task(d3.Average(np.sqrt(u @ u), ("x", "y", "z")), name="Re", layout="g")
+
+    scalars.add_task(d3.Average(Temp(z=0), ("x", "y")), name="<T(0)>", layout="g")
+
+    scalars.add_task(d3.Average(Temp, ("x", "y", "z")), name="<<T>>", layout="g")
+
     scalars.add_task(
-        d3.Integrate(d3.Integrate(d3.Integrate(0.5 * u @ u, "y"), "z"), "x")
-        / (Lz * Ly * Ly),
-        name="KE",
-        layout="g",
+        d3.Average(f_cond + f_conv, ("x", "y", "z")), name="F_tot", layout="g"
     )
+
     scalars.add_task(
-        d3.Integrate(d3.Integrate(d3.Integrate(np.sqrt(u @ u), "x"), "y"), "z")
-        / (Lz * Ly * Ly),
-        name="Re",
-        layout="g",
-    )
-    scalars.add_task(
-        d3.Integrate(d3.Integrate(Temp(z=0), "y"), "x") / Ly * Ly,
-        name="<T(0)>",
-        layout="g",
-    )
-    scalars.add_task(
-        d3.Integrate(d3.Integrate(d3.Integrate(Temp, "x"), "y"), "z") / (Ly * Ly * Lz),
-        name="<<T>>",
-        layout="g",
-    )
-    scalars.add_task(
-        d3.Integrate(d3.Integrate(d3.Integrate(f_cond + f_conv, "x"), "y"), "z")
-        / (Ly * Ly * Lz),
-        name="F_tot",
-        layout="g",
-    )
-    scalars.add_task(
-        d3.Integrate(
-            d3.Integrate(
-                d3.Integrate(
-                    d3.Trace(d3.TransposeComponents(d3.Gradient(u)) @ d3.Gradient(u)),
-                    "x",
-                ),
-                "y",
-            ),
-            "z",
-        )
-        / (Ly * Ly * Lz),
+        d3.Average(
+            d3.Trace(d3.TransposeComponents(d3.Gradient(u)) @ d3.Gradient(u)),
+            ("x", "y", "z"),
+        ),
         name="<(grad u)^2>",
         layout="g",
     )
 
     scalars.add_task(
-        Ra
-        * d3.Integrate(d3.Integrate(d3.Integrate(u_z * Temp, "x"), "y"), "z")
-        / (Ly * Ly * Lz),
-        name="Ra*<wT>",
-        layout="g",
+        Ra * d3.Average(u_z * Temp, ("x", "y", "z")), name="Ra*<wT>", layout="g"
     )
 
     scalars.add_task(
-        d3.Integrate(
-            d3.Integrate(d3.Integrate(d3.Gradient(Temp) @ d3.Gradient(Temp), "x"), "y"),
-            "z",
-        )
-        / (Ly * Ly * Lz),
-        name="<(grad T)>",
+        d3.Average(d3.Gradient(Temp) @ d3.Gradient(Temp), ("x", "y", "z")),
+        name="<(grad T)^2>",
         layout="g",
     )
 
-    scalars.add_task(
-        d3.Integrate(d3.Integrate(d3.Integrate(Temp * heat, "x"), "y"), "z")
-        / (Ly * Ly * Lz),
-        name="<QT>",
-        layout="g",
-    )
-
-    # analysis = solver.evaluator.add_file_handler(
-    #     outpath + "analysis",
-    #     iter=analysis_iter,
-    #     max_writes=5000,
-    #     mode=fh_mode,
-    #     parallel=parallel,
-    # )
-    # analysis.add_task(f_cond, name='F_cond', layout='g') #? F_cond
-    # analysis.add_task(f_conv, name='F_conv', layout='g') #? F_conv
-    # analysis.add_task(0.5*u@u, name='KE', layout='g') #? KE
-    # analysis.add_task(d3.Integrate(Temp, 'y') / Ly, name='<T>y', layout='g') #? <T>y
-    # analysis.add_task(d3.Integrate(d3.Integrate(Temp, 'y'), 'z') / (Lz*Ly), name='<T>', layout='g') #? <T>
-    # analysis.add_task((d3.Integrate(f_cond, coords['z']) / Lz) / (d3.Integrate(f_conv, coords['z']) / Lz),
-    #                   name='Nu_inst', layout='g') #? Nu_inst
+    scalars.add_task(d3.Average(Temp * heat, ("x", "y", "z")), name="<QT>", layout="g")
 
 solver.stop_sim_time = stop_sim_time
 solver.stop_wall_time = stop_wall_time
