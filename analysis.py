@@ -120,7 +120,7 @@ def get_heat_func(heat):
 
 
 def dx(field):
-    return np.zeroes_like(field)
+    return np.zeros_like(field)
 
 
 def dy(field):
@@ -367,7 +367,7 @@ if args["--info"]:
     Nu_start = timer.time()
     scalar_ASI = get_index(sc_time, float(args["--ASI"]))
     scalar_AEI = get_index(sc_time, float(args["--ASI"]) + float(args["--AD"]))
-
+    print(f"ASI: {scalar_ASI}, AEI: {scalar_AEI}")
     prof_ASI = get_index(horiz_time, float(args["--ASI"]))
     prof_AEI = get_index(horiz_time, float(args["--ASI"]) + float(args["--AD"]))
 
@@ -721,22 +721,93 @@ if args["--gif"]:
 # # ! ============== Shraiman-Siggia ============== ! #
 if args["--shraiman-siggia"]:
     dir_path = normpath(args["FILE"]) + "/"
+    try:
+        sc_files = sorted(
+            glob(dir_path + "scalars/scalars_s*.h5"),
+            key=lambda f: int(re.sub("\D", "", f)),
+        )
+        for i, sc_file in enumerate(sc_files):
+            if i == 0:
+                with h5.File(sc_file, "r") as f:
+                    gradT_sq = np.array(f["tasks"]["<(grad T)>"]).flatten()
+                    gradu_sq = np.array(f["tasks"]["<(grad u)^2>"]).flatten()
+                    qT = np.array(f["tasks"]["<QT>"]).flatten()
+                    RawT = np.array(f["tasks"]["Ra*<wT>"]).flatten()
+                    Re = np.array(f["tasks"]["Re"]).flatten()
+                    t = np.array(f["scales"]["sim_time"]).flatten()
+            else:
+                with h5.File(sc_file, "r") as f:
+                    gradT_sq = np.concatenate(
+                        (gradT_sq, np.array(f["tasks"]["<(grad T)>"]).flatten()), axis=0
+                    )
+                    gradu_sq = np.concatenate(
+                        (gradu_sq, np.array(f["tasks"]["<(grad u)^2>"]).flatten()),
+                        axis=0,
+                    )
+                    qT = np.concatenate(
+                        (qT, np.array(f["tasks"]["<QT>"]).flatten()), axis=0
+                    )
+                    RawT = np.concatenate(
+                        (RawT, np.array(f["tasks"]["Ra*<wT>"]).flatten()), axis=0
+                    )
+                    Re = np.concatenate(
+                        (Re, np.array(f["tasks"]["Re"]).flatten()), axis=0
+                    )
+                    t = np.concatenate((t, np.array(f["scales"]["sim_time"])), axis=0)
+
+        ASI = get_index(t, float(args["--ASI"]))
+        AEI = get_index(t, float(args["--ASI"]) + float(args["--AD"]))
+
+        ave_gradT_sq = np.nanmean(gradT_sq[ASI:AEI], axis=0)
+        ave_RawT = np.nanmean(RawT[ASI:AEI], axis=0)
+        ave_qT = np.nanmean(qT[ASI:AEI], axis=0)
+        ave_gradu_sq = np.nanmean(gradu_sq[ASI:AEI], axis=0)
+        ave_Re = np.nanmean(Re[ASI:AEI], axis=0)
+
+        print(
+            f"<(grad T)²> = {ave_gradT_sq:.5f}, <Ra*<wT>> = {ave_RawT:.5f}, <QT> = {ave_qT:.5f}, <(grad u)²> = {ave_gradu_sq:.5f}"
+        )
+        print(f"<wT> = {(ave_RawT / 8.3e8):.5f}")
+        print(f"Re = {ave_Re:.5f}")
+        exit()
+        with open(dir_path + "/run_params/runparams.json", "r") as file:
+            run_params = json.load(file)
+        with open(dir_path + "shraiman_siggia.json", "w") as file:
+            json.dump(
+                {
+                    "Rf": run_params["Ra"],
+                    "Ta": run_params["Ta"],
+                    "gradT_sq": ave_gradT_sq,
+                    "TQ": ave_qT,
+                    "gradu_sq": ave_gradu_sq,
+                    "RfwT": ave_RawT,
+                },
+                file,
+                indent=4,
+            )
+
+    except:
+        exit()
+        print("****No scalar files found.****")
+        print("****Calculating from snapshots.****")
+
     snap_files = sorted(glob(dir_path + "snapshots/snapshots_s*.h5"))
     for i, snap_file in enumerate(snap_files):
         if i == 0:
             with h5.File(snap_file, "r") as f:
-                Temp = np.array(f["tasks"]["Temp"])[:, 0, :, :]
-                vel_field = np.array(f["tasks"]["u"])[:, :, 0, :, :]
+                Temp = np.array(f["tasks"]["Temp"])[:, :, :, :]
+                vel_field = np.array(f["tasks"]["u"])[:, :, :, :, :]
                 t = np.array(f["tasks"]["u"].dims[0]["sim_time"])
+                x = np.array(f["tasks"]["u"].dims[2]["x"])
                 y = np.array(f["tasks"]["u"].dims[3]["y"])
                 z = np.array(f["tasks"]["u"].dims[4]["z"])
         else:
             with h5.File(snap_file, "r") as f:
                 vel_field = np.concatenate(
-                    (vel_field, np.array(f["tasks"]["u"])[:, :, 0, :, :]), axis=0
+                    (vel_field, np.array(f["tasks"]["u"])[:, :, :, :, :]), axis=0
                 )
                 Temp = np.concatenate(
-                    (Temp, np.array(f["tasks"]["Temp"])[:, 0, :, :]), axis=0
+                    (Temp, np.array(f["tasks"]["Temp"])[:, :, :, :]), axis=0
                 )
                 t = np.concatenate(
                     (t, np.array(f["tasks"]["Temp"].dims[0]["sim_time"])), axis=0
@@ -747,89 +818,114 @@ if args["--shraiman-siggia"]:
 
     Lz = run_params["Lz"]
     Ly = run_params["Ly"]
+    Lx = int(x[-1])
+    prefactor = 1 / (Lx * Ly * Lz)
     Rf = run_params["Ra"]
     Ta = run_params["Ta"]
     ASI = get_index(t, float(args["--ASI"]))
     AEI = get_index(t, float(args["--ASI"]) + float(args["--AD"]))
 
-    del_T = np.gradient(Temp, t, y, z)
-    del_T = np.array(del_T)
-    dt_T = del_T[0, :]
-    dy_T = del_T[1, :]
-    dz_T = del_T[2, :]
+    print(Temp.shape)
+    T_dt, T_dx, T_dy, T_dz = np.gradient(Temp, t, x, y, z)
+    # T_dx = np.gradient(Temp, x, axis=1)
+    # T_dy = np.gradient(Temp, y, axis=2)
+    # T_dz = np.gradient(Temp, z, axis=3)
 
-    del_T_sq = (dy_T) ** 2 + (dz_T) ** 2
-    hor_ave_dTsq = (1 / Ly) * np.trapz(del_T_sq, y, axis=1)
-    vol_ave_dTsq = (1 / Lz) * np.trapz(hor_ave_dTsq, z, axis=1)
-    ave_dTsq = np.nanmean(vol_ave_dTsq[ASI:AEI], axis=0)
-    hor_bar_dTsq = np.nanmean(hor_ave_dTsq[ASI:AEI], axis=0)
+    gradT_sq = T_dx**2 + T_dy**2 + T_dz**2
+    # vol_gradT_sq = (1 / 8) * np.trapz(
+    #    np.trapz(np.trapz(gradT_sq, x, axis=1), y, axis=1), z, axis=1
+    # )
+    dx = np.gradient(x)
+    dy = np.gradient(y)
+    dz = np.gradient(z)
+    weight = dx[None, :, None, None] * dy[None, None, :, None] * dz[None, None, None, :]
+    weighted_gradT_sq = gradT_sq * weight
+    vol_gradT_sq = np.mean(
+        np.mean(np.mean(weighted_gradT_sq, axis=1), axis=1), axis=1
+    ) / np.mean(weight)
+    ave_gradT_sq = np.nanmean(vol_gradT_sq[ASI:AEI], axis=0)
+    print(ave_gradT_sq)
 
-    heat = get_heat_func("exp")
-    hor_ave_TQ = (1 / Ly) * np.trapz(Temp * heat, y, axis=1)
-    vol_ave_TQ = (1 / Lz) * np.trapz(hor_ave_TQ, z, axis=1)
-    ave_TQ = np.nanmean(vol_ave_TQ[ASI:AEI], axis=0)
-    hor_bar_TQ = np.nanmean(hor_ave_TQ[ASI:AEI], axis=0)
+    # heat = get_heat_func("exp")
+    # TQ = Temp * heat
+    # vol_TQ = prefactor * np.trapz(
+    #     np.trapz(np.trapz(TQ, x, axis=1), y, axis=1), z, axis=1
+    # )
+    # ave_TQ = np.nanmean(vol_TQ[ASI:AEI], axis=0)
+    # print(ave_TQ)
 
-    print(f"<(∇T)²> = {ave_dTsq:.5f}, <TQ> = {ave_TQ:.5f}")
+    # u = vel_field[:, 0, :, :, :]
+    # v = vel_field[:, 1, :, :, :]
+    # w = vel_field[:, 2, :, :, :]
 
-    u = vel_field[:, 0, :, :]
-    v = vel_field[:, 1, :, :]
-    w = vel_field[:, 2, :, :]
+    # frob_ns = (
+    #     (dx(u)) ** 2
+    #     + dx(v) ** 2
+    #     + dx(w) ** 2
+    #     + (dy(u)) ** 2
+    #     + (dy(v)) ** 2
+    #     + (dy(w)) ** 2
+    #     + (dz(u)) ** 2
+    #     + (dz(v)) ** 2
+    #     + (dz(w)) ** 2
+    # )
+    # hor_ave_frob = (1 / (Lx * Ly)) * np.trapz(
+    #     np.trapz(frob_ns, x, axis=1), y, axis=1
+    # )
+    # vol_ave_frob = (1 / Lz) * np.trapz(hor_ave_frob, z, axis=1)
+    # LHS = ave_frob_ns = np.nanmean(
+    #     vol_ave_frob[ASI:AEI],
+    #     axis=0,
+    # )
+    # hor_bar_frob = np.nanmean(hor_ave_frob[ASI:AEI], axis=0)
 
-    frob_ns = (
-        (dy(u)) ** 2
-        + (dy(v)) ** 2
-        + (dy(w)) ** 2
-        + (dz(u)) ** 2
-        + (dz(v)) ** 2
-        + (dz(w)) ** 2
-    )
-    hor_ave_frob = (1 / Ly) * np.trapz(frob_ns, y, axis=1)
-    vol_ave_frob = (1 / Lz) * np.trapz(hor_ave_frob, z, axis=1)
-    LHS = ave_frob_ns = np.nanmean(
-        vol_ave_frob[ASI:AEI],
-        axis=0,
-    )
-    hor_bar_frob = np.nanmean(hor_ave_frob[ASI:AEI], axis=0)
+    # hor_ave_wT = (1 / (Lx * Ly)) * np.trapz(
+    #     np.trapz(w * Temp, x, axis=1), y, axis=1
+    # )
+    # vol_ave_wT = (1 / Lz) * np.trapz(hor_ave_wT, z, axis=1)
+    # ave_wT = np.nanmean(vol_ave_wT[ASI:AEI], axis=0)
+    # hor_bar_wT = np.nanmean(hor_ave_wT[ASI:AEI], axis=0)
 
-    hor_ave_wT = (1 / Ly) * np.trapz(w * Temp, y, axis=1)
-    vol_ave_wT = (1 / Lz) * np.trapz(hor_ave_wT, z, axis=1)
-    ave_wT = np.nanmean(vol_ave_wT[ASI:AEI], axis=0)
-    hor_bar_wT = np.nanmean(hor_ave_wT[ASI:AEI], axis=0)
+    # RHS = Rf * ave_wT
 
-    RHS = Rf * ave_wT
+    # print(
+    #     f"<(∇u)²> = {ave_frob_ns:e}, Rf * <wT> = {Rf:.1e} * {ave_wT:.5f} = {RHS:e}"
+    # )
 
-    print(f"<(∇u)²> = {ave_frob_ns:e}, Rf * <wT> = {Rf:.1e} * {ave_wT:.5f} = {RHS:e}")
+    # fig, [therm_ax, visc_ax] = plt.subplots(1, 2, figsize=(6, 4))
+    # therm_ax.plot(
+    #     hor_bar_dTsq, z, label=r"$\langle (\nabla T)^2 \rangle_H$"
+    # )
+    # therm_ax.plot(hor_bar_TQ, z, label=r"$\langle TQ \rangle_H$")
+    # therm_ax.set_xlabel(r"$\epsilon_T$")
+    # therm_ax.set_ylabel("z")
+    # therm_ax.legend()
 
-    with open(dir_path + "shraiman_siggia.json", "w") as file:
-        json.dump(
-            {
-                "Rf": Rf,
-                "Ta": Ta,
-                "gradT_sq": ave_dTsq,
-                "TQ": ave_TQ,
-                "gradu_sq": ave_frob_ns,
-                "RfwT": RHS,
-            },
-            file,
-            indent=4,
-        )
+    # visc_ax.plot(hor_bar_frob, z, label=r"$\langle (\nabla u)^2 \rangle_H$")
+    # visc_ax.plot(
+    #     Rf * hor_bar_wT, z, label=r"$R_f \cdot \langle wT \rangle_H$"
+    # )
+    # visc_ax.set_xlabel(r"$\epsilon_U$")
+    # visc_ax.set_ylabel("z")
+    # visc_ax.legend()
+    # fig.suptitle(f"Ta = {Ta:.0e}, Rf = {Rf:.1e}")
+    # plt.tight_layout()
+    # plt.savefig(outpath + "diss_profiles.pdf")
 
-    fig, [therm_ax, visc_ax] = plt.subplots(1, 2, figsize=(6, 4))
-    therm_ax.plot(hor_bar_dTsq, z, label=r"$\langle (\nabla T)^2 \rangle_H$")
-    therm_ax.plot(hor_bar_TQ, z, label=r"$\langle TQ \rangle_H$")
-    therm_ax.set_xlabel(r"$\epsilon_T$")
-    therm_ax.set_ylabel("z")
-    therm_ax.legend()
+    # with open(dir_path + "shraiman_siggia.json", "w") as file:
+    #     json.dump(
+    #         {
+    #             "Rf": Rf,
+    #             "Ta": Ta,
+    #             "gradT_sq": ave_dTsq,
+    #             "TQ": ave_TQ,
+    #             "gradu_sq": ave_frob_ns,
+    #             "RfwT": RHS,
+    #         },
+    #         file,
+    #         indent=4,
+    #     )
 
-    visc_ax.plot(hor_bar_frob, z, label=r"$\langle (\nabla u)^2 \rangle_H$")
-    visc_ax.plot(Rf * hor_bar_wT, z, label=r"$R_f \cdot \langle wT \rangle_H$")
-    visc_ax.set_xlabel(r"$\epsilon_U$")
-    visc_ax.set_ylabel("z")
-    visc_ax.legend()
-    fig.suptitle(f"Ta = {Ta:.0e}, Rf = {Rf:.1e}")
-    plt.tight_layout()
-    plt.savefig(outpath + "diss_profiles.pdf")
 
 # # ! ============== Velocity Averages ============== ! #
 if args["--vel_aves"]:
