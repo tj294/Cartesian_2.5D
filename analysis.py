@@ -25,7 +25,7 @@ Options:
     --cadence [CADENCE]             # Cadence of the gifs [default: 1]
     --window [WINDOW]               # Window for rolling average [default: 0.05]
     --heat-func [HEAT]              # Heat function to use if not in snapshot [default: exp]
-    --ASI [TIME]                    # Sim-time to begin average [default: 0.65]
+    --ASI [TIME]                    # Sim-time to begin average [default: -1]
     --AD [DURATION]                 # Time average duration [default: 2.0]
     --no-prefactor                  # Don't use the prefactor for the flux balance [default: True]
 
@@ -46,6 +46,16 @@ from os import makedirs
 from os.path import normpath
 from shutil import rmtree
 from glob import glob
+
+
+def get_ave_indices(time):
+    if float(args["--ASI"]) < 0:
+        AEI = -1
+        ASI = np.abs(time, time[AEI] - float(args["--AD"]))
+    else:
+        ASI = get_index(time, float(args["--ASI"]))
+        AEI = get_index(time, float(args["--ASI"]) + float(args["--AD"]))
+    return ASI, AEI
 
 
 def rolling_average(quantity, time, window: float):
@@ -209,12 +219,9 @@ if args["--nusselt"]:
                     (F_conv, np.array(file["tasks"]["<F_conv>"])[:, 0, 0, :]), axis=0
                 )
 
-    scalar_ASI = get_index(sc_time, float(args["--ASI"]))
-    scalar_AEI = get_index(sc_time, float(args["--ASI"]) + float(args["--AD"]))
-    snap_ASI = get_index(snap_time, float(args["--ASI"]))
-    snap_AEI = get_index(snap_time, float(args["--ASI"]) + float(args["--AD"]))
-    prof_ASI = get_index(prof_time, float(args["--ASI"]))
-    prof_AEI = get_index(prof_time, float(args["--ASI"]) + float(args["--AD"]))
+    scalar_ASI, scalar_AEI = get_ave_indices(sc_time)
+    snap_ASI, snap_AEI = get_ave_indices(snap_time)
+    prof_ASI, prof_AEI = get_ave_indices(prof_time)
 
     inv_t0 = 1 / T_0
     inv_t0_ave = np.nanmean(inv_t0[scalar_ASI:scalar_AEI], axis=0)
@@ -365,11 +372,9 @@ print(f"Done ({read_finish:.2f} seconds)")
 if args["--info"]:
     print("====== Nusselt Number ======")
     Nu_start = timer.time()
-    scalar_ASI = get_index(sc_time, float(args["--ASI"]))
-    scalar_AEI = get_index(sc_time, float(args["--ASI"]) + float(args["--AD"]))
+    scalar_ASI, scalar_AEI = get_ave_indices(sc_time)
     print(f"ASI: {scalar_ASI}, AEI: {scalar_AEI}")
-    prof_ASI = get_index(horiz_time, float(args["--ASI"]))
-    prof_AEI = get_index(horiz_time, float(args["--ASI"]) + float(args["--AD"]))
+    prof_ASI, prof_AEI = get_ave_indices(horiz_time)
 
     l = 0.1
     beta = 1
@@ -415,7 +420,7 @@ if args["--time-tracks"]:
         skip_cadence = 10
     else:
         skip_cadence = 1
-    AEI = get_index(sc_time, float(args["--ASI"]) + float(args["--AD"]))
+    ASI, AEI = get_ave_indices(sc_time)
     # skip_cadence = 1
 
     KE_run_ave = rolling_average(
@@ -461,8 +466,7 @@ if args["--profile-dissipation"]:
     print("====== Dissipation Profile ======")
     diss_start = timer.time()
 
-    ASI = get_index(snap_time, float(args["--ASI"]))
-    AEI = get_index(snap_time, float(args["--ASI"]) + float(args["--AD"]))
+    ASI, AEI = get_ave_indices(snap_time)
 
     u = vel[:, 0, :, :]
     v = vel[:, 1, :, :]
@@ -554,8 +558,7 @@ if args["--flux-balance"]:
     #     with open(direc+'run_params/runparams.json', 'r') as file:
     #         params = json.load(file)
     #         driving_flux = params['F']
-    ASI = get_index(horiz_time, float(args["--ASI"]))
-    AEI = get_index(horiz_time, float(args["--ASI"]) + float(args["--AD"]))
+    ASI, AEI = get_ave_indices(horiz_time)
     with open(direc + "run_params/runparams.json", "r") as file:
         params = json.load(file)
         Ly = params["Ly"]
@@ -567,18 +570,33 @@ if args["--flux-balance"]:
     F_conv_bar = np.nanmean(F_conv[ASI:AEI], axis=0)
     F_tot_bar = np.nanmean(f_tot[ASI:AEI], axis=0)
     a = 1 if not_prefactor else 1 / Ly
+    print(a)
     heat_func = get_heat_func(args["--heat-func"])
     F_imp = a * cumtrapz(heat_func, z, initial=0)
-    discrepency = np.mean(np.abs(F_imp - F_tot_bar))
-    print(f"F_imp - F_tot discrepency = {discrepency:.3f}")
+    discrepency = np.trapz(np.abs(F_imp - F_tot_bar) / F_tot_bar, x=z) * 100
+    print(f"F_imp - F_tot discrepency = {discrepency:.1f}%")
+    print(f"Averaging between {horiz_time[ASI]:.2f} and {horiz_time[AEI]:.2f}")
+    dicti = {}
+    dicti["flux_match"] = discrepency
     # F_imp *= scaling
+    with open(direc + "steady_state.json", "w") as file:
+        json.dump(dicti, file, indent=4)
+
+    np.savez(
+        direc + "fluxes",
+        F_cond=F_cond_bar,
+        F_conv=F_conv_bar,
+        F_tot=F_tot_bar,
+        F_imp=F_imp,
+        z=z,
+    )
 
     indexes = np.asarray((np.diff(np.sign(F_cond_bar - F_conv_bar)) != 0) * 1).nonzero()
     print(indexes)
     fig, ax = plt.subplots(1, 1, figsize=(6, 4))
     ax.plot(F_cond_bar, z, label=r"$F_{cond}$", c="b")
     ax.plot(F_conv_bar, z, label=r"$F_{conv}$", c="r")
-    ax.plot(F_imp, z, label=r"$F_{imp}$", c="g")
+    ax.plot(F_imp, z, label=r"$F_{imp}$", c="purple")
     ax.plot(F_tot_bar, z, label=r"$F_{tot}$", c="k", ls="--")
     if len(indexes[0]) < 2:
         print("Not enough crossings found.")
@@ -602,7 +620,8 @@ if args["--flux-balance"]:
     ax.set_ylabel("z")
     plt.legend(loc="best")
     plt.tight_layout()
-    plt.savefig(outpath + "flux_balance.pdf")
+    print(f"Saving to {outpath + 'new_flux_balance.pdf'}")
+    plt.savefig(outpath + "new_flux_balance.pdf")
 
     print(f"Done ({timer.time() - flux_start:.2f}s).")
 
@@ -610,8 +629,7 @@ if args["--flux-balance"]:
 if args["--depth-profile"]:
     print("====== Depth Profile ======")
     depth_start = timer.time()
-    ASI = get_index(horiz_time, float(args["--ASI"]))
-    AEI = get_index(horiz_time, float(args["--ASI"]) + float(args["--AD"]))
+    ASI, AEI = get_ave_indices(horiz_time)
     temp_hor_bar = np.nanmean(temp_hor[ASI:AEI], axis=0)
 
     fig, ax = plt.subplots(1, 1, figsize=(6, 4))
@@ -721,75 +739,74 @@ if args["--gif"]:
 # # ! ============== Shraiman-Siggia ============== ! #
 if args["--shraiman-siggia"]:
     dir_path = normpath(args["FILE"]) + "/"
-    try:
-        sc_files = sorted(
-            glob(dir_path + "scalars/scalars_s*.h5"),
-            key=lambda f: int(re.sub("\D", "", f)),
+    print("======= Shraiman-Siggia =======")
+    # try:
+    sc_files = sorted(
+        glob(dir_path + "scalars/scalars_s*.h5"),
+        key=lambda f: int(re.sub("\D", "", f)),
+    )
+    for i, sc_file in enumerate(sc_files):
+        print(sc_file)
+        if i == 0:
+            with h5.File(sc_file, "r") as f:
+                gradT_sq = np.array(f["tasks"]["<(grad T)>"]).flatten()
+                gradu_sq = np.array(f["tasks"]["<(grad u)^2>"]).flatten()
+                qT = np.array(f["tasks"]["<QT>"]).flatten()
+                RawT = np.array(f["tasks"]["Ra*<wT>"]).flatten()
+                Re = np.array(f["tasks"]["Re"]).flatten()
+                t = np.array(f["scales"]["sim_time"]).flatten()
+        else:
+            with h5.File(sc_file, "r") as f:
+                gradT_sq = np.concatenate(
+                    (gradT_sq, np.array(f["tasks"]["<(grad T)>"]).flatten()), axis=0
+                )
+                gradu_sq = np.concatenate(
+                    (gradu_sq, np.array(f["tasks"]["<(grad u)^2>"]).flatten()),
+                    axis=0,
+                )
+                qT = np.concatenate(
+                    (qT, np.array(f["tasks"]["<QT>"]).flatten()), axis=0
+                )
+                RawT = np.concatenate(
+                    (RawT, np.array(f["tasks"]["Ra*<wT>"]).flatten()), axis=0
+                )
+                Re = np.concatenate((Re, np.array(f["tasks"]["Re"]).flatten()), axis=0)
+                t = np.concatenate((t, np.array(f["scales"]["sim_time"])), axis=0)
+
+    ASI, AEI = get_ave_indices(t)
+
+    ave_gradT_sq = np.nanmean(gradT_sq[ASI:AEI], axis=0)
+    ave_RawT = np.nanmean(RawT[ASI:AEI], axis=0)
+    ave_qT = np.nanmean(qT[ASI:AEI], axis=0)
+    ave_gradu_sq = np.nanmean(gradu_sq[ASI:AEI], axis=0)
+    ave_Re = np.nanmean(Re[ASI:AEI], axis=0)
+
+    print(
+        f"<(grad T)²> = {ave_gradT_sq:.5f}, <Ra*<wT>> = {ave_RawT:.5f}, <QT> = {ave_qT:.5f}, <(grad u)²> = {ave_gradu_sq:.5f}"
+    )
+    print(f"<wT> = {(ave_RawT / 8.3e8):.5f}")
+    print(f"Re = {ave_Re:.5f}")
+    exit()
+    with open(dir_path + "/run_params/runparams.json", "r") as file:
+        run_params = json.load(file)
+    with open(dir_path + "shraiman_siggia.json", "w") as file:
+        json.dump(
+            {
+                "Rf": run_params["Ra"],
+                "Ta": run_params["Ta"],
+                "gradT_sq": ave_gradT_sq,
+                "TQ": ave_qT,
+                "gradu_sq": ave_gradu_sq,
+                "RfwT": ave_RawT,
+            },
+            file,
+            indent=4,
         )
-        for i, sc_file in enumerate(sc_files):
-            if i == 0:
-                with h5.File(sc_file, "r") as f:
-                    gradT_sq = np.array(f["tasks"]["<(grad T)>"]).flatten()
-                    gradu_sq = np.array(f["tasks"]["<(grad u)^2>"]).flatten()
-                    qT = np.array(f["tasks"]["<QT>"]).flatten()
-                    RawT = np.array(f["tasks"]["Ra*<wT>"]).flatten()
-                    Re = np.array(f["tasks"]["Re"]).flatten()
-                    t = np.array(f["scales"]["sim_time"]).flatten()
-            else:
-                with h5.File(sc_file, "r") as f:
-                    gradT_sq = np.concatenate(
-                        (gradT_sq, np.array(f["tasks"]["<(grad T)>"]).flatten()), axis=0
-                    )
-                    gradu_sq = np.concatenate(
-                        (gradu_sq, np.array(f["tasks"]["<(grad u)^2>"]).flatten()),
-                        axis=0,
-                    )
-                    qT = np.concatenate(
-                        (qT, np.array(f["tasks"]["<QT>"]).flatten()), axis=0
-                    )
-                    RawT = np.concatenate(
-                        (RawT, np.array(f["tasks"]["Ra*<wT>"]).flatten()), axis=0
-                    )
-                    Re = np.concatenate(
-                        (Re, np.array(f["tasks"]["Re"]).flatten()), axis=0
-                    )
-                    t = np.concatenate((t, np.array(f["scales"]["sim_time"])), axis=0)
 
-        ASI = get_index(t, float(args["--ASI"]))
-        AEI = get_index(t, float(args["--ASI"]) + float(args["--AD"]))
-
-        ave_gradT_sq = np.nanmean(gradT_sq[ASI:AEI], axis=0)
-        ave_RawT = np.nanmean(RawT[ASI:AEI], axis=0)
-        ave_qT = np.nanmean(qT[ASI:AEI], axis=0)
-        ave_gradu_sq = np.nanmean(gradu_sq[ASI:AEI], axis=0)
-        ave_Re = np.nanmean(Re[ASI:AEI], axis=0)
-
-        print(
-            f"<(grad T)²> = {ave_gradT_sq:.5f}, <Ra*<wT>> = {ave_RawT:.5f}, <QT> = {ave_qT:.5f}, <(grad u)²> = {ave_gradu_sq:.5f}"
-        )
-        print(f"<wT> = {(ave_RawT / 8.3e8):.5f}")
-        print(f"Re = {ave_Re:.5f}")
-        exit()
-        with open(dir_path + "/run_params/runparams.json", "r") as file:
-            run_params = json.load(file)
-        with open(dir_path + "shraiman_siggia.json", "w") as file:
-            json.dump(
-                {
-                    "Rf": run_params["Ra"],
-                    "Ta": run_params["Ta"],
-                    "gradT_sq": ave_gradT_sq,
-                    "TQ": ave_qT,
-                    "gradu_sq": ave_gradu_sq,
-                    "RfwT": ave_RawT,
-                },
-                file,
-                indent=4,
-            )
-
-    except:
-        exit()
-        print("****No scalar files found.****")
-        print("****Calculating from snapshots.****")
+    # except:
+    #     print("****No scalar files found.****")
+    #     print("****Calculating from snapshots.****")
+    #     exit()
 
     snap_files = sorted(glob(dir_path + "snapshots/snapshots_s*.h5"))
     for i, snap_file in enumerate(snap_files):
@@ -822,8 +839,7 @@ if args["--shraiman-siggia"]:
     prefactor = 1 / (Lx * Ly * Lz)
     Rf = run_params["Ra"]
     Ta = run_params["Ta"]
-    ASI = get_index(t, float(args["--ASI"]))
-    AEI = get_index(t, float(args["--ASI"]) + float(args["--AD"]))
+    ASI, AEI = get_ave_indices(t)
 
     print(Temp.shape)
     T_dt, T_dx, T_dy, T_dz = np.gradient(Temp, t, x, y, z)
@@ -845,86 +861,6 @@ if args["--shraiman-siggia"]:
     ) / np.mean(weight)
     ave_gradT_sq = np.nanmean(vol_gradT_sq[ASI:AEI], axis=0)
     print(ave_gradT_sq)
-
-    # heat = get_heat_func("exp")
-    # TQ = Temp * heat
-    # vol_TQ = prefactor * np.trapz(
-    #     np.trapz(np.trapz(TQ, x, axis=1), y, axis=1), z, axis=1
-    # )
-    # ave_TQ = np.nanmean(vol_TQ[ASI:AEI], axis=0)
-    # print(ave_TQ)
-
-    # u = vel_field[:, 0, :, :, :]
-    # v = vel_field[:, 1, :, :, :]
-    # w = vel_field[:, 2, :, :, :]
-
-    # frob_ns = (
-    #     (dx(u)) ** 2
-    #     + dx(v) ** 2
-    #     + dx(w) ** 2
-    #     + (dy(u)) ** 2
-    #     + (dy(v)) ** 2
-    #     + (dy(w)) ** 2
-    #     + (dz(u)) ** 2
-    #     + (dz(v)) ** 2
-    #     + (dz(w)) ** 2
-    # )
-    # hor_ave_frob = (1 / (Lx * Ly)) * np.trapz(
-    #     np.trapz(frob_ns, x, axis=1), y, axis=1
-    # )
-    # vol_ave_frob = (1 / Lz) * np.trapz(hor_ave_frob, z, axis=1)
-    # LHS = ave_frob_ns = np.nanmean(
-    #     vol_ave_frob[ASI:AEI],
-    #     axis=0,
-    # )
-    # hor_bar_frob = np.nanmean(hor_ave_frob[ASI:AEI], axis=0)
-
-    # hor_ave_wT = (1 / (Lx * Ly)) * np.trapz(
-    #     np.trapz(w * Temp, x, axis=1), y, axis=1
-    # )
-    # vol_ave_wT = (1 / Lz) * np.trapz(hor_ave_wT, z, axis=1)
-    # ave_wT = np.nanmean(vol_ave_wT[ASI:AEI], axis=0)
-    # hor_bar_wT = np.nanmean(hor_ave_wT[ASI:AEI], axis=0)
-
-    # RHS = Rf * ave_wT
-
-    # print(
-    #     f"<(∇u)²> = {ave_frob_ns:e}, Rf * <wT> = {Rf:.1e} * {ave_wT:.5f} = {RHS:e}"
-    # )
-
-    # fig, [therm_ax, visc_ax] = plt.subplots(1, 2, figsize=(6, 4))
-    # therm_ax.plot(
-    #     hor_bar_dTsq, z, label=r"$\langle (\nabla T)^2 \rangle_H$"
-    # )
-    # therm_ax.plot(hor_bar_TQ, z, label=r"$\langle TQ \rangle_H$")
-    # therm_ax.set_xlabel(r"$\epsilon_T$")
-    # therm_ax.set_ylabel("z")
-    # therm_ax.legend()
-
-    # visc_ax.plot(hor_bar_frob, z, label=r"$\langle (\nabla u)^2 \rangle_H$")
-    # visc_ax.plot(
-    #     Rf * hor_bar_wT, z, label=r"$R_f \cdot \langle wT \rangle_H$"
-    # )
-    # visc_ax.set_xlabel(r"$\epsilon_U$")
-    # visc_ax.set_ylabel("z")
-    # visc_ax.legend()
-    # fig.suptitle(f"Ta = {Ta:.0e}, Rf = {Rf:.1e}")
-    # plt.tight_layout()
-    # plt.savefig(outpath + "diss_profiles.pdf")
-
-    # with open(dir_path + "shraiman_siggia.json", "w") as file:
-    #     json.dump(
-    #         {
-    #             "Rf": Rf,
-    #             "Ta": Ta,
-    #             "gradT_sq": ave_dTsq,
-    #             "TQ": ave_TQ,
-    #             "gradu_sq": ave_frob_ns,
-    #             "RfwT": RHS,
-    #         },
-    #         file,
-    #         indent=4,
-    #     )
 
 
 # # ! ============== Velocity Averages ============== ! #
@@ -949,8 +885,7 @@ if args["--vel_aves"]:
         axis=1,
     )
 
-    ASI = get_index(snap_time, float(args["--ASI"]))
-    AEI = get_index(snap_time, float(args["--ASI"]) + float(args["--AD"]))
+    ASI, AEI = get_ave_indices(snap_time)
 
     u_ave = np.nanmean(u_hor[ASI:AEI], axis=0)
     v_ave = np.nanmean(v_hor[ASI:AEI], axis=0)
@@ -996,8 +931,7 @@ if args["--anisotropy"]:
     u = vel[:, 0, :, :, :]
     v = vel[:, 1, :, :, :]
     w = vel[:, 2, :, :, :]
-    ASI = get_index(snap_time, float(args["--ASI"]))
-    AEI = get_index(snap_time, float(args["--ASI"]) + float(args["--AD"]))
+    ASI, AEI = get_ave_indices(snap_time)
 
     u_rms = np.nanmean(
         np.sqrt(
