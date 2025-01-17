@@ -51,7 +51,7 @@ from glob import glob
 def get_ave_indices(time):
     if float(args["--ASI"]) < 0:
         AEI = -1
-        ASI = np.abs(time, time[AEI] - float(args["--AD"]))
+        ASI = get_index(time, time[AEI] - float(args["--AD"]))
     else:
         ASI = get_index(time, float(args["--ASI"]))
         AEI = get_index(time, float(args["--ASI"]) + float(args["--AD"]))
@@ -631,10 +631,10 @@ if args["--depth-profile"]:
     depth_start = timer.time()
     ASI, AEI = get_ave_indices(horiz_time)
     temp_hor_bar = np.nanmean(temp_hor[ASI:AEI], axis=0)
-
+    temp_bottom = temp_hor_bar[0]
     fig, ax = plt.subplots(1, 1, figsize=(6, 4))
     ax.plot(temp_hor_bar, z, c="k")
-    ax.set_xlabel(r"$\langle \overline{T} \rangle$")
+    ax.set_xlabel(r"$\langle \overline{T} \rangle / T_b$")
     ax.set_ylabel("z")
     ax.text(0.05, 0.05, f"ΔT = {temp_hor_bar[0]:.2f}", transform=ax.transAxes)
     plt.tight_layout()
@@ -740,73 +740,75 @@ if args["--gif"]:
 if args["--shraiman-siggia"]:
     dir_path = normpath(args["FILE"]) + "/"
     print("======= Shraiman-Siggia =======")
-    # try:
-    sc_files = sorted(
-        glob(dir_path + "scalars/scalars_s*.h5"),
-        key=lambda f: int(re.sub("\D", "", f)),
-    )
-    for i, sc_file in enumerate(sc_files):
-        print(sc_file)
-        if i == 0:
-            with h5.File(sc_file, "r") as f:
-                gradT_sq = np.array(f["tasks"]["<(grad T)>"]).flatten()
-                gradu_sq = np.array(f["tasks"]["<(grad u)^2>"]).flatten()
-                qT = np.array(f["tasks"]["<QT>"]).flatten()
-                RawT = np.array(f["tasks"]["Ra*<wT>"]).flatten()
-                Re = np.array(f["tasks"]["Re"]).flatten()
-                t = np.array(f["scales"]["sim_time"]).flatten()
-        else:
-            with h5.File(sc_file, "r") as f:
-                gradT_sq = np.concatenate(
-                    (gradT_sq, np.array(f["tasks"]["<(grad T)>"]).flatten()), axis=0
-                )
-                gradu_sq = np.concatenate(
-                    (gradu_sq, np.array(f["tasks"]["<(grad u)^2>"]).flatten()),
-                    axis=0,
-                )
-                qT = np.concatenate(
-                    (qT, np.array(f["tasks"]["<QT>"]).flatten()), axis=0
-                )
-                RawT = np.concatenate(
-                    (RawT, np.array(f["tasks"]["Ra*<wT>"]).flatten()), axis=0
-                )
-                Re = np.concatenate((Re, np.array(f["tasks"]["Re"]).flatten()), axis=0)
-                t = np.concatenate((t, np.array(f["scales"]["sim_time"])), axis=0)
-
-    ASI, AEI = get_ave_indices(t)
-
-    ave_gradT_sq = np.nanmean(gradT_sq[ASI:AEI], axis=0)
-    ave_RawT = np.nanmean(RawT[ASI:AEI], axis=0)
-    ave_qT = np.nanmean(qT[ASI:AEI], axis=0)
-    ave_gradu_sq = np.nanmean(gradu_sq[ASI:AEI], axis=0)
-    ave_Re = np.nanmean(Re[ASI:AEI], axis=0)
-
-    print(
-        f"<(grad T)²> = {ave_gradT_sq:.5f}, <Ra*<wT>> = {ave_RawT:.5f}, <QT> = {ave_qT:.5f}, <(grad u)²> = {ave_gradu_sq:.5f}"
-    )
-    print(f"<wT> = {(ave_RawT / 8.3e8):.5f}")
-    print(f"Re = {ave_Re:.5f}")
-    exit()
-    with open(dir_path + "/run_params/runparams.json", "r") as file:
-        run_params = json.load(file)
-    with open(dir_path + "shraiman_siggia.json", "w") as file:
-        json.dump(
-            {
-                "Rf": run_params["Ra"],
-                "Ta": run_params["Ta"],
-                "gradT_sq": ave_gradT_sq,
-                "TQ": ave_qT,
-                "gradu_sq": ave_gradu_sq,
-                "RfwT": ave_RawT,
-            },
-            file,
-            indent=4,
+    try:
+        sc_files = sorted(
+            glob(dir_path + "scalars/scalars_s*.h5"),
+            key=lambda f: int(re.sub("\D", "", f)),
         )
+        for i, sc_file in enumerate(sc_files[31:]):
+            print(sc_file)
+            if i == 0:
+                with h5.File(sc_file, "r") as f:
+                    gradT_sq = np.array(f["tasks"]["<(grad T)^2>"]).flatten()
+                    gradu_sq = np.array(f["tasks"]["<(grad u)^2>"]).flatten()
+                    qT = np.array(f["tasks"]["<QT>"]).flatten()
+                    RawT = np.array(f["tasks"]["Ra*<wT>"]).flatten()
+                    Re = np.array(f["tasks"]["Re"]).flatten()
+                    t = np.array(f["scales"]["sim_time"]).flatten()
+            else:
+                with h5.File(sc_file, "r") as f:
+                    gradT_sq = np.concatenate(
+                        (gradT_sq, np.array(f["tasks"]["<(grad T)^2>"]).flatten()),
+                        axis=0,
+                    )
+                    gradu_sq = np.concatenate(
+                        (gradu_sq, np.array(f["tasks"]["<(grad u)^2>"]).flatten()),
+                        axis=0,
+                    )
+                    qT = np.concatenate(
+                        (qT, np.array(f["tasks"]["<QT>"]).flatten()), axis=0
+                    )
+                    RawT = np.concatenate(
+                        (RawT, np.array(f["tasks"]["Ra*<wT>"]).flatten()), axis=0
+                    )
+                    Re = np.concatenate(
+                        (Re, np.array(f["tasks"]["Re"]).flatten()), axis=0
+                    )
+                    t = np.concatenate((t, np.array(f["scales"]["sim_time"])), axis=0)
 
-    # except:
-    #     print("****No scalar files found.****")
-    #     print("****Calculating from snapshots.****")
-    #     exit()
+        ASI, AEI = get_ave_indices(t)
+
+        ave_gradT_sq = np.nanmean(gradT_sq[ASI:AEI], axis=0)
+        ave_RawT = np.nanmean(RawT[ASI:AEI], axis=0)
+        ave_qT = np.nanmean(qT[ASI:AEI], axis=0)
+        ave_gradu_sq = np.nanmean(gradu_sq[ASI:AEI], axis=0)
+        ave_Re = np.nanmean(Re[ASI:AEI], axis=0)
+
+        print(
+            f"<(grad T)²> = {ave_gradT_sq:.5f}, <Ra*<wT>> = {ave_RawT:.5f}, <QT> = {ave_qT:.5f}, <(grad u)²> = {ave_gradu_sq:.5f}"
+        )
+        print(f"<wT> = {(ave_RawT / 8.3e8):.5f}")
+        print(f"Re = {ave_Re:.5f}")
+        with open(dir_path + "/run_params/runparams.json", "r") as file:
+            run_params = json.load(file)
+        with open(dir_path + "shraiman_siggia.json", "w") as file:
+            json.dump(
+                {
+                    "Rf": run_params["Ra"],
+                    "Ta": run_params["Ta"],
+                    "gradT_sq": ave_gradT_sq,
+                    "TQ": ave_qT,
+                    "gradu_sq": ave_gradu_sq,
+                    "RfwT": ave_RawT,
+                },
+                file,
+                indent=4,
+            )
+        exit()
+    except:
+        print("****No scalar files found.****")
+        exit()
+        print("****Calculating from snapshots.****")
 
     snap_files = sorted(glob(dir_path + "snapshots/snapshots_s*.h5"))
     for i, snap_file in enumerate(snap_files):
