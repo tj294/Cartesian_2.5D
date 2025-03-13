@@ -146,7 +146,6 @@ dealias = 3 / 2
 dtype = np.float64
 timestepper = d3.RK443
 
-stop_sim_time = float(args["--stop"])
 stop_wall_time = np.inf
 stop_iteration = np.inf
 
@@ -352,6 +351,10 @@ if args["--input"]:
         write, last_dt = solver.load_state(restart_file, -1)
         dt = last_dt
         first_iter = solver.iteration
+        if '+' in args["--stop"][0]:
+            stop_sim_time = solver.sim_time + float(args['--stop'][1:])
+        else:
+            stop_sim_time = float(args["--stop"])
         fh_mode = "append"
     else:
         logger.error(
@@ -361,6 +364,10 @@ if args["--input"]:
         )
         exit(-10)
 else:
+    if '+' in args["--stop"]:
+        stop_sim_time = float(args["--stop"][1:])
+    else:
+        stop_sim_time = float(args['--stop'])
     # ? Need to change this to a better initial condition
     Temp.fill_random("g", seed=42, distribution="normal", scale=1e-1)
     # Temp.low_pass_filter(scales=0.25)
