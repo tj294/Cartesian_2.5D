@@ -7,7 +7,7 @@ Nusselt Number.
 
 Usage:
     analysis.py FILE [options]
-    
+
 Options:
     -t --time-tracks                # Plot the time-track data (KE and 1/<T>)
     -d --depth-profile              # Plot the depth profile of the temperature
@@ -94,7 +94,9 @@ def calculate_crossing(curve):
 
 def get_heat_func(heat):
     try:
-        with h5.File(direc + "snapshots/snapshots_s1.h5", "r") as file:
+        snaps = glob(direc + "snapshots/snapshots_s*.h5")
+        snaps.sort(key=lambda f: int(re.sub("\D", "", f)))
+        with h5.File(snaps[-1], "r") as file:
             heat_func = np.array(file["tasks"]["heat"])[0, 0, 0, :]
         print("Reading heat function from snapshots")
         return heat_func
@@ -592,7 +594,6 @@ if args["--flux-balance"]:
     )
 
     indexes = np.asarray((np.diff(np.sign(F_cond_bar - F_conv_bar)) != 0) * 1).nonzero()
-    print(indexes)
     fig, ax = plt.subplots(1, 1, figsize=(6, 4))
     ax.plot(F_cond_bar, z, label=r"$F_{cond}$", c="b")
     ax.plot(F_conv_bar, z, label=r"$F_{conv}$", c="r")
@@ -604,8 +605,6 @@ if args["--flux-balance"]:
         therm_bot = z[indexes[0][0]]
         therm_top = z[indexes[0][-1]]
         mean_therm_bl = np.mean([therm_bot, 1 - therm_top])
-        print(therm_bot, 1 - therm_top)
-        print(f"Thermal Boundary Layer = {mean_therm_bl:.3f}")
         ax.axhspan(z[0], therm_bot, color="gray", alpha=0.5)
         ax.axhspan(therm_top, z[-1], color="gray", alpha=0.5)
 
