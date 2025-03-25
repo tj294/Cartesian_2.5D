@@ -125,6 +125,8 @@ if args["--kazemi"]:
     heat_type = "Kazemi"
 elif args["--currie"]:
     heat_type = "Currie"
+    Hwidth = float(args["--Hwidth"])
+    Lz += 2*Hwidth
 else:
     heat_type = None
 if args["--slip"] == "no":
@@ -217,9 +219,9 @@ omega["g"][2] = np.cos(theta)
 # Width of middle 'convection zone' with no heating/cooling
 heating_width = float(args["--Hwidth"])
 
-H = Lz / (1 + 2 * heating_width)
+H = Lz / (float(args["--Lz"]) + 2 * heating_width)
 # Width of heating and cooling layers
-Delta = heating_width * H
+Delta = heating_width
 
 heat = dist.Field(bases=zbasis)
 if args["--currie"]:
@@ -269,7 +271,7 @@ elif args["--tau"] == "viscous":
     )
     # Temp Evolution
     problem.add_equation(
-        "dt(Temp) + lift(tau_T4) - (1 / Pr) * (div(h_operator)) = -(u@h_operator) + (1 / Pr) * heat"
+        "dt(Temp) + lift(tau_T4) - (1 / Pr) * (div(h_operator)) = -(u@h_operator) + heat"
     )
 else:
     raise ValueError(
