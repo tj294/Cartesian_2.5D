@@ -126,7 +126,9 @@ if args["--kazemi"]:
 elif args["--currie"]:
     heat_type = "Currie"
     Hwidth = float(args["--Hwidth"])
-    Lz += 2*Hwidth
+    if not args["--input"]:
+        Lz += 2 * Hwidth
+        Ly = Lz * Ly
 else:
     heat_type = None
 if args["--slip"] == "no":
@@ -218,10 +220,11 @@ omega["g"][2] = np.cos(theta)
 # Following Currie et al. 2020 Set-up B
 # Width of middle 'convection zone' with no heating/cooling
 heating_width = float(args["--Hwidth"])
-
-H = Lz / (float(args["--Lz"]) + 2 * heating_width)
+H = Lz / (1 + 2 * heating_width)
+# H = Lz / (float(args["--Lz"]) + 2 * heating_width)
 # Width of heating and cooling layers
-Delta = heating_width
+Delta = heating_width * H
+# Delta = heating_width
 
 heat = dist.Field(bases=zbasis)
 if args["--currie"]:
@@ -353,8 +356,8 @@ if args["--input"]:
         write, last_dt = solver.load_state(restart_file, -1)
         dt = last_dt
         first_iter = solver.iteration
-        if '+' in args["--stop"][0]:
-            stop_sim_time = solver.sim_time + float(args['--stop'][1:])
+        if "+" in args["--stop"][0]:
+            stop_sim_time = solver.sim_time + float(args["--stop"][1:])
         else:
             stop_sim_time = float(args["--stop"])
         fh_mode = "append"
@@ -366,10 +369,10 @@ if args["--input"]:
         )
         exit(-10)
 else:
-    if '+' in args["--stop"]:
+    if "+" in args["--stop"]:
         stop_sim_time = float(args["--stop"][1:])
     else:
-        stop_sim_time = float(args['--stop'])
+        stop_sim_time = float(args["--stop"])
     # ? Need to change this to a better initial condition
     Temp.fill_random("g", seed=42, distribution="normal", scale=1e-1)
     # Temp.low_pass_filter(scales=0.25)
@@ -493,8 +496,17 @@ if not args["--test"]:
 
     scalars.add_task(d3.Average(0.5 * u @ u, ("x", "y", "z")), name="KE", layout="g")
 
-    scalars.add_task(d3.Average(np.sqrt(u @ u), ("x", "y", "z")), name="Re", layout="g")
-
+    scalars.add_task(np.sqrt(d3.Average(u @ u, ("x", "y", "z"))), name="Re", layout="g")
+    Ekman = Ta ** (-0.5)
+    scalars.add_task(
+        np.sqrt(
+            d3.Average(
+                (d3.Curl(u) * Ekman / 2) @ (d3.Curl(u) * Ekman / 2), ("x", "y", "z")
+            )
+        ),
+        name="Ro",
+        layout="g",
+    )
     scalars.add_task(d3.Average(Temp(z=0), ("x", "y")), name="<T(0)>", layout="g")
 
     scalars.add_task(d3.Average(Temp, ("x", "y", "z")), name="<<T>>", layout="g")
